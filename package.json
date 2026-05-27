@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-sdk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Post-quantum identity SDK: ML-DSA-65 hierarchical credentials (institution → user), KYC-gated issuance, audited HSM signing. NIST FIPS 204.",
   "keywords": [
     "post-quantum",
@@ -24,8 +24,12 @@
   "license": "Apache-2.0",
   "author": "KXCO by Knightsbridge <hello@kxco.ai>",
   "contributors": [
-    { "name": "Shayne Heffernan" },
-    { "name": "John Heffernan" }
+    {
+      "name": "Shayne Heffernan"
+    },
+    {
+      "name": "John Heffernan"
+    }
   ],
   "homepage": "https://kxco.ai",
   "repository": {
