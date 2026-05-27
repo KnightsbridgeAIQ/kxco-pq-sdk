@@ -1,5 +1,10 @@
 name: publish
 
+# Auth: npm Trusted Publishing via GitHub Actions OIDC.
+# Register at https://www.npmjs.com/package/kxco-pq-sdk/access
+# binding org=JackKXCO, repo=kxco-pq-sdk, workflow=publish.yml.
+# No NPM_TOKEN. No OTP. No secrets.
+
 on:
   push:
     tags:
@@ -13,25 +18,32 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Checkout tagged commit
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
 
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - name: Setup Node 20 with npm registry
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
 
-      - run: npm ci
-      - run: npm test
+      - name: Upgrade npm CLI to >=11.5.1
+        run: npm install -g npm@latest
 
-      - name: Publish
-        run: npm publish --access public --no-provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Publish (Trusted Publishing + provenance via OIDC)
+        run: npm publish --provenance --access public
