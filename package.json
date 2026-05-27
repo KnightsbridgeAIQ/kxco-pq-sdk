@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-sdk",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Post-quantum identity SDK: ML-DSA-65 hierarchical credentials (institution → user), KYC-gated issuance, audited HSM signing. NIST FIPS 204.",
   "keywords": [
     "post-quantum",

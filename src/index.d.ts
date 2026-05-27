@@ -61,11 +61,20 @@ export interface ChainVerifyResult extends VerifyResult {
 
 // ── KxcoIdentity ──────────────────────────────────────────────────────────
 
+/** Minimal KxcoChain interface — pass any kxco-pq-chain KxcoChain instance */
+export interface ChainClient {
+  registerInstitution(opts: { publicKeyHex: string; metadataUrl?: string }): Promise<{ txHash: string; blockNumber: number }>
+  issueCredential(opts: { userKid: string; userPublicKeyHex: string; role: string; expiresAt?: number }): Promise<{ txHash: string; blockNumber: number }>
+  revokeCredential(opts: { userKid: string; reason?: string }): Promise<{ txHash: string; blockNumber: number }>
+}
+
 export interface CreateOptions {
   keypair?: { publicKey: Uint8Array; secretKey: Uint8Array }
   hsm?: import('kxco-pq-hsm').PqHsm
   label?: string
   auditLog?: import('kxco-pq-audit').AuditLog
+  chain?: ChainClient
+  metadataUrl?: string
 }
 
 export interface IssueOptions {
@@ -74,6 +83,13 @@ export interface IssueOptions {
   metadata?: Record<string, unknown>
   expiresIn?: string          // e.g. '365d', '24h', '30m'
   auditLog?: import('kxco-pq-audit').AuditLog
+  chain?: ChainClient
+}
+
+export interface RevokeOptions {
+  reason?: string
+  auditLog?: import('kxco-pq-audit').AuditLog
+  chain?: ChainClient
 }
 
 export interface AttestOptions {
@@ -117,6 +133,9 @@ export class KxcoIdentity {
 
   /** Issue a signed credential to a user. Institution identities only. */
   issue(userPublicKey: Uint8Array | Buffer, opts: IssueOptions): Promise<KxcoCredential>
+
+  /** Revoke a user credential on-chain. Institution identities only. */
+  revoke(userKid: string, opts?: RevokeOptions): Promise<void>
 
   /** Produce a signed attestation envelope. */
   attest(data: string | Uint8Array | Buffer, opts?: AttestOptions): Promise<AttestationEnvelope>

@@ -126,7 +126,7 @@ export class KxcoIdentity {
 
   // ── Factory: institution identity ────────────────────────────────────────
 
-  static async create({ keypair, hsm, label, auditLog } = {}) {
+  static async create({ keypair, hsm, label, auditLog, chain, metadataUrl } = {}) {
     let kid, kp = null, hsmRef = null, hsmLabel = null
 
     if (hsm) {
@@ -148,7 +148,17 @@ export class KxcoIdentity {
       await auditLog.append('identity:created', { kid, type: 'institution' })
     }
 
-    return new KxcoIdentity({ kid, keypair: kp, hsm: hsmRef, hsmLabel })
+    const identity = new KxcoIdentity({ kid, keypair: kp, hsm: hsmRef, hsmLabel })
+
+    if (chain) {
+      const publicKey = await identity.getPublicKey()
+      await chain.registerInstitution({
+        publicKeyHex: Buffer.from(publicKey).toString('hex'),
+        ...(metadataUrl && { metadataUrl }),
+      })
+    }
+
+    return identity
   }
 
   // ── Factory: reconstruct user identity from keypair + issued credential ──
@@ -187,7 +197,7 @@ export class KxcoIdentity {
 
   // ── Issue a credential for a user (institution identity only) ────────────
 
-  async issue(userPublicKey, { role, authority = [], metadata = {}, expiresIn, auditLog } = {}) {
+  async issue(userPublicKey, { role, authority = [], metadata = {}, expiresIn, auditLog, chain } = {}) {
     if (this.#parentKid) {
       throw new KxcoPqSdkError('only institution identities can issue credentials')
     }
@@ -219,7 +229,34 @@ export class KxcoIdentity {
       await auditLog.append('credential:issued', { userKid, issuedBy: this.#kid, role })
     }
 
+    if (chain) {
+      const expiresAtSec = expiresAt ? Math.floor(new Date(expiresAt).getTime() / 1000) : 0
+      await chain.issueCredential({
+        userKid,
+        userPublicKeyHex: Buffer.from(userKeyBytes).toString('hex'),
+        role,
+        ...(expiresAtSec && { expiresAt: expiresAtSec }),
+      })
+    }
+
     return cred
+  }
+
+  // ── Revoke a user credential (institution identity only) ─────────────────
+
+  async revoke(userKid, { reason, auditLog, chain } = {}) {
+    if (this.#parentKid) {
+      throw new KxcoPqSdkError('only institution identities can revoke credentials')
+    }
+    if (!userKid) throw new KxcoPqSdkError('revoke: userKid is required')
+
+    if (auditLog) {
+      await auditLog.append('credential:revoked', { userKid, revokedBy: this.#kid, reason })
+    }
+
+    if (chain) {
+      await chain.revokeCredential({ userKid, ...(reason && { reason }) })
+    }
   }
 
   // ── Attest arbitrary data ─────────────────────────────────────────────────
