@@ -1,0 +1,70 @@
+{
+  "name": "kxco-pq-sdk",
+  "version": "1.0.0",
+  "description": "Post-quantum identity SDK: ML-DSA-65 hierarchical credentials (institution → user), KYC-gated issuance, audited HSM signing. NIST FIPS 204.",
+  "keywords": [
+    "post-quantum",
+    "pqc",
+    "ml-dsa",
+    "nist",
+    "fips-204",
+    "identity",
+    "kxco",
+    "kyc",
+    "verifiable-credential",
+    "digital-signature",
+    "hierarchical-identity",
+    "vLEI",
+    "quantum-safe",
+    "document-signing",
+    "compliance",
+    "audit-log",
+    "hsm"
+  ],
+  "license": "Apache-2.0",
+  "author": "KXCO by Knightsbridge <hello@kxco.ai>",
+  "contributors": [
+    { "name": "Shayne Heffernan" },
+    { "name": "John Heffernan" }
+  ],
+  "homepage": "https://kxco.ai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JackKXCO/kxco-pq-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JackKXCO/kxco-pq-sdk/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "dependencies": {
+    "kxco-post-quantum": "^1.1.6",
+    "kxco-pq-hsm": "^1.0.5",
+    "kxco-pq-audit": "^1.0.5",
+    "kxco-pq-attest": "^1.0.0"
+  },
+  "scripts": {
+    "test": "node --test --test-timeout=30000 test/identity.test.js"
+  },
+  "funding": "https://kxco.ai",
+  "publishConfig": {
+    "provenance": true,
+    "access": "public"
+  }
+}
