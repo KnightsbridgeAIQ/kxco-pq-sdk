@@ -5,23 +5,20 @@
 [![node](https://img.shields.io/node/v/kxco-pq-sdk.svg)](https://nodejs.org)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Post-quantum identity SDK. Hierarchical ML-DSA-65 credentials — institution signs → user identity issued → user signs documents, transactions, and regulatory submissions. Chain is offline-verifiable with no central registry.
-
-Built on [NIST FIPS 204 (ML-DSA)](https://csrc.nist.gov/pubs/fips/204/final) via the [audited @noble/post-quantum](https://github.com/paulmillr/noble-post-quantum) library (Cure53, 2024).
+Institution identity layer for the KXCO stack — ML-DSA-65 hierarchical credentials, HSM-backed signing, and optional on-chain anchoring via Armature L1.
 
 ---
 
-## The identity model
+## When to use this
 
-```
-Institution Identity (root, HSM-backed)
-    └── User Identity (issued after KYC verification)
-            └── Signed document / transaction / attestation
-```
+This package is for **institutions participating in the KXCO network**. Use it when you need to:
 
-An **institution identity** is the root signing key for an organisation. A **user identity** is issued by the institution after KYC — it carries a signed credential binding the user's public key to their role and authority. Any counterparty can verify the full chain offline.
+- Issue post-quantum credentials to KYC-verified users
+- Sign attestations (documents, trades, regulatory submissions) as an institution or user
+- Verify the full credential chain offline — no network call required
+- Store institution keys in a hardware security module (PKCS#11, encrypted file, or memory)
 
-This follows the [GLEIF vLEI pattern](https://www.gleif.org/en/vlei/introducing-the-verifiable-lei-vlei): KXCO → Institution → User.
+If you are building an agent, relay, or encrypted channel, this is not the right package.
 
 ---
 
@@ -38,40 +35,35 @@ npm install kxco-pq-sdk
 ```js
 import { KxcoIdentity, mlDsa } from 'kxco-pq-sdk'
 
-// Institution: create identity once, store keypair securely
-const institutionIdentity = await KxcoIdentity.create()
+// Institution: generate identity once, store keypair securely
+const institution = await KxcoIdentity.create()
 
-// User: generate keypair (e.g. in browser)
+// User: generate keypair (e.g. in a browser or mobile app)
 const userKeypair = mlDsa.ml_dsa65.keygen()
 
-// Institution: issue credential after KYC approval
-const credential = await institutionIdentity.issue(userKeypair.publicKey, {
+// Institution: issue a credential after KYC approval
+const credential = await institution.issue(userKeypair.publicKey, {
   role:      'verified-user',
-  authority: ['sign:transactions', 'access:chain'],
-  metadata:  { sumsubApplicantId: 'applicant_42', country: 'GB' },
+  authority: ['sign:transactions'],
   expiresIn: '365d',
 })
 
-// User: activate identity using their keypair + received credential
-const userIdentity = KxcoIdentity.fromCredential({
-  keypair:    userKeypair,
-  credential,
-})
+// User: reconstruct a signing identity from keypair + credential
+const userIdentity = KxcoIdentity.fromCredential({ keypair: userKeypair, credential })
 
-// User: sign a document, transaction, or regulatory submission
+// User: sign a document or transaction
 const envelope = await userIdentity.attest(
   { action: 'transfer', amount: 1000, currency: 'GBP' },
-  { purpose: 'trade-confirmation', aud: 'counterparty-kid' },
+  { purpose: 'trade-confirmation' },
 )
 
-// Verifier: check the full chain
+// Verifier: check the full chain offline
 const result = KxcoIdentity.verifyChain({
   envelope,
   credential,
-  institutionPublicKey: await institutionIdentity.getPublicKey(),
+  institutionPublicKey: await institution.getPublicKey(),
 })
-// result.valid === true
-// result.role, result.authority, result.metadata, result.issuedBy available
+// result.valid, result.role, result.authority, result.issuedBy
 ```
 
 ---
@@ -80,132 +72,104 @@ const result = KxcoIdentity.verifyChain({
 
 ### `KxcoIdentity.create(opts?)`
 
-Creates an institution (root) identity.
+Creates an institution (root) identity. Generates a new ML-DSA-65 keypair unless `keypair` or `hsm` is supplied.
 
-```js
-const identity = await KxcoIdentity.create({
-  keypair,   // existing { publicKey, secretKey } — generated if omitted
-  hsm,       // PqHsm or AuditedHsm — use for production institution keys
-  label,     // required if hsm provided
-  auditLog,  // optional AuditLog — logs 'identity:created'
-})
-```
+| Option | Type | Description |
+|---|---|---|
+| `keypair` | `{ publicKey, secretKey }` | Existing keypair — generated if omitted |
+| `hsm` | `PqHsm \| AuditedHsm` | HSM instance for production key storage |
+| `label` | `string` | Required when `hsm` is provided |
+| `auditLog` | `AuditLog` | Logs `identity:created` |
+| `chain` | `KxcoChain` | Registers institution on Armature L1 |
+| `metadataUrl` | `string` | Passed to chain registration |
 
-### `institutionIdentity.issue(userPublicKey, opts)`
+### `institution.issue(userPublicKey, opts)`
 
 Issues a signed credential to a user. Institution identities only.
 
-```js
-const credential = await institutionIdentity.issue(userPublicKey, {
-  role:      'compliance-officer',        // required
-  authority: ['sign:regulatory-report'],  // default []
-  metadata:  { sumsubApplicantId: '...' },
-  expiresIn: '365d',                      // '365d', '24h', '30m', '60s'
-  auditLog,                               // optional — logs 'credential:issued'
-})
-```
+| Option | Type | Description |
+|---|---|---|
+| `role` | `string` | Required. e.g. `'verified-user'`, `'compliance-officer'` |
+| `authority` | `string[]` | Default `[]`. e.g. `['sign:transactions']` |
+| `metadata` | `object` | Arbitrary key/value — e.g. Sumsub applicant ID |
+| `expiresIn` | `string` | `'365d'`, `'24h'`, `'30m'`, `'60s'` |
+| `auditLog` | `AuditLog` | Logs `credential:issued` |
+| `chain` | `KxcoChain` | Anchors credential on Armature L1 |
 
-Returns a plain JSON object (serialise and deliver to user over HTTP).
+Returns a plain JSON object. Serialise and deliver to the user over HTTP.
+
+### `institution.revoke(userKid, opts?)`
+
+Revokes a user credential. Institution identities only. Does nothing locally — side effects are the audit log entry and the on-chain revocation.
+
+| Option | Type | Description |
+|---|---|---|
+| `reason` | `string` | Optional revocation reason |
+| `auditLog` | `AuditLog` | Logs `credential:revoked` |
+| `chain` | `KxcoChain` | Anchors revocation on Armature L1 |
 
 ### `KxcoIdentity.fromCredential({ keypair, credential })`
 
-Reconstructs a user's signing identity from their keypair and a received credential.
-
-```js
-const userIdentity = KxcoIdentity.fromCredential({ keypair, credential })
-```
+Reconstructs a user's signing identity from their keypair and a received credential. Returns a `KxcoIdentity` with `role`, `authority`, `parentKid`, and `metadata` populated.
 
 ### `identity.attest(data, opts?)`
 
-Signs arbitrary data. Returns a self-contained envelope.
+Signs arbitrary data and returns a self-contained envelope. `data` can be a string, `Buffer`, `Uint8Array`, or any JSON-serialisable object.
 
-```js
-const envelope = await identity.attest(data, {
-  purpose: 'regulatory-report',
-  aud:     'FCA',
-  exp:     new Date(Date.now() + 86400000).toISOString(),
-  context: { customField: 'value' },
-})
-```
+| Option | Type | Description |
+|---|---|---|
+| `purpose` | `string` | e.g. `'regulatory-report'`, `'trade-confirmation'` |
+| `aud` | `string` | Intended audience |
+| `exp` | `string` | ISO 8601 expiry |
+| `context` | `object` | Additional fields merged into the envelope |
 
-`data` can be a string, `Uint8Array`, `Buffer`, or any JSON-serialisable object.
+### `identity.sign(message)`
+
+Raw ML-DSA-65 signing. Returns a `Uint8Array` signature. Prefer `attest()` for structured envelopes.
 
 ### `identity.verify(envelope)`
 
-Verifies that this identity signed the envelope.
-
-```js
-const result = await identity.verify(envelope)
-// { valid: true, payload: Uint8Array, iss, role, authority, iat, ... }
-```
+Verifies that this identity signed the envelope. Returns `{ valid, payload, iss, role, authority, iat, ... }`.
 
 ### `KxcoIdentity.verifyChain({ envelope, credential, institutionPublicKey })`
 
-Verifies the full chain: institution signed the credential, user signed the envelope, iss matches, nothing expired. Offline — no network call.
+Verifies the full chain offline: institution signed the credential, user signed the envelope, `iss` matches `userKid`, nothing expired.
 
 ```js
 const result = KxcoIdentity.verifyChain({
   envelope,
   credential,
-  institutionPublicKey,  // Uint8Array from institution's well-known URL
+  institutionPublicKey,  // Uint8Array — fetch from institution's well-known URL
 })
+// result.valid, result.role, result.authority, result.metadata, result.issuedBy
 ```
 
 ### Identity properties
 
-| Property     | Institution | User          |
-|--------------|-------------|---------------|
-| `kid`        | 16-hex      | 16-hex        |
-| `role`       | `null`      | e.g. `'staff'`|
-| `authority`  | `null`      | `string[]`    |
-| `parentKid`  | `null`      | institution kid |
-| `credential` | `null`      | signed object |
-| `metadata`   | `{}`        | `{}`          |
+| Property | Institution | User |
+|---|---|---|
+| `kid` | 16-hex fingerprint | 16-hex fingerprint |
+| `role` | `null` | e.g. `'verified-user'` |
+| `authority` | `null` | `string[]` |
+| `parentKid` | `null` | institution kid |
+| `credential` | `null` | signed credential object |
+| `metadata` | `{}` | `{}` |
 
 ---
 
-## Use cases
+## HSM backends
 
-**Document signing**
-```js
-// Hash the PDF, sign the hash
-const pdfBytes = fs.readFileSync('report.pdf')
-const envelope = await complianceOfficer.attest(pdfBytes, {
-  purpose: 'regulatory-report',
-  aud:     'FCA',
-})
-// Deliver envelope alongside PDF. Verifier calls verifyChain().
-```
+Import from `kxco-pq-sdk`. All implement the `PqHsm` interface.
 
-**Trade confirmation**
-```js
-const envelope = await traderIdentity.attest(
-  { orderId: 'TX-001', side: 'BUY', qty: 10000, price: 1.2345 },
-  { purpose: 'trade-confirmation' },
-)
-```
-
-**KYC attestation to a third party**
-```js
-// Third party calls:
-const result = KxcoIdentity.verifyChain({
-  envelope,
-  credential,
-  institutionPublicKey: fetchedFromWellKnownUrl,
-})
-if (result.valid && result.authority.includes('access:platform')) {
-  // admit user
-}
-```
-
----
-
-## Audited HSM signing
-
-Use `AuditedHsm` to auto-log all HSM operations to a tamper-evident `AuditLog`.
+| Backend | Use case |
+|---|---|
+| `MemoryBackend` | Testing only — keys are not persisted |
+| `FileBackend` | Encrypted JSON file — suitable for server environments without hardware HSM |
+| `Pkcs11Backend` | Hardware HSM via PKCS#11 — production institution keys |
+| `AuditedHsm` | Wraps any backend and writes every keygen/sign/delete to an `AuditLog` |
 
 ```js
-import { KxcoIdentity, AuditedHsm, AuditLog, PqHsm, FileBackend, mlDsa } from 'kxco-pq-sdk'
+import { KxcoIdentity, AuditedHsm, PqHsm, FileBackend, AuditLog, mlDsa } from 'kxco-pq-sdk'
 
 const logKeypair = mlDsa.ml_dsa65.keygen()
 const log        = new AuditLog({ keypair: logKeypair })
@@ -213,33 +177,34 @@ const hsm        = new PqHsm(new FileBackend({ path: './institution.json', passw
 const auditedHsm = new AuditedHsm(hsm, log)
 
 const institution = await KxcoIdentity.create({ hsm: auditedHsm, label: 'institution-key' })
-// Every keygen, sign, and deleteKey is written to log.
 ```
 
 ---
 
-## Re-exports
+## Chain integration
 
-`kxco-pq-sdk` re-exports everything you need from the ecosystem:
+Pass a `KxcoChain` instance from `kxco-pq-chain` to `create`, `issue`, or `revoke` to anchor operations on Armature L1. The `chain` parameter is optional on all three methods — omit it to run fully offline. When provided, `create` calls `chain.registerInstitution`, `issue` calls `chain.issueCredential`, and `revoke` calls `chain.revokeCredential`. Credential chain verification via `verifyChain` is always offline and requires no chain connection.
 
-```js
-import {
-  // Identity
-  KxcoIdentity, AuditedHsm,
+---
 
-  // HSM
-  PqHsm, MemoryBackend, FileBackend, Pkcs11Backend,
+## What this does NOT do
 
-  // Audit log
-  AuditLog, FileAuditLog,
+- No relay client — use `kxco-pq-chain` directly for chain communication
+- No agent identity — this package is for institutions and their issued users
+- No encrypted channels — attestation envelopes are signed, not encrypted
 
-  // Raw attestation (kxco-pq-attest)
-  attest, verify,
+---
 
-  // Primitives
-  mlDsa, mlKem, fingerprint, kidEquals,
-} from 'kxco-pq-sdk'
-```
+## Part of the KXCO stack
+
+| Package | Role |
+|---|---|
+| `kxco-post-quantum` | ML-DSA-65, ML-KEM primitives |
+| `kxco-pq-attest` | Standalone attestation without identity |
+| `kxco-pq-audit` | Tamper-evident audit log |
+| `kxco-pq-hsm` | HSM backends |
+| `kxco-pq-sdk` | This package — institution identity layer |
+| `kxco-pq-chain` | Armature L1 chain client |
 
 ---
 
@@ -249,16 +214,11 @@ Cryptography: **ML-DSA-65** (NIST FIPS 204) via [@noble/post-quantum](https://gi
 
 To report a vulnerability: [security@kxco.ai](mailto:security@kxco.ai) — do not open a public issue.
 
-Advisory feed: [github.com/JackKXCO/kxco-pq-sdk/security/advisories](https://github.com/JackKXCO/kxco-pq-sdk/security/advisories)
-
 ---
 
-## Funding
+## Authors
 
-Supported by [Knightsbridge](https://knightsbridgelaw.com) · Shayne Heffernan · John Heffernan
-
-- [kxco.ai](https://kxco.ai) — KXCO platform
-- [Armature L1](https://chain.kxco.ai) — post-quantum blockchain
+Shayne Heffernan and John Heffernan — [kxco.ai](https://kxco.ai)
 
 ---
 
