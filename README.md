@@ -222,6 +222,12 @@ Shayne Heffernan and John Heffernan — [kxco.ai](https://kxco.ai)
 
 ---
 
+## Supported runtimes
+
+Node.js **20.19+** (current LTS and later). ESM-only. New features and bug
+fixes land on the latest major version; security fixes are backported one
+major version.
+
 ## License
 
 Apache-2.0 © 2026 KXCO by Knightsbridge
