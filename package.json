@@ -1,7 +1,7 @@
 {
   "name": "kxco-pq-sdk",
-  "version": "1.1.1",
-  "description": "Institution identity layer for the KXCO stack — ML-DSA-65 hierarchical credentials, HSM-backed signing, and optional on-chain anchoring via Armature L1.",
+  "version": "1.1.3",
+  "description": "Institution identity layer for the KXCO stack: ML-DSA-65 hierarchical credentials, HSM-backed signing, and optional on-chain anchoring via Armature L1.",
   "keywords": [
     "post-quantum",
     "pqc",
@@ -34,10 +34,10 @@
   "homepage": "https://kxco.ai",
   "repository": {
     "type": "git",
-    "url": "https://github.com/JackKXCO/kxco-pq-sdk.git"
+    "url": "https://github.com/KnightsbridgeAIQ/kxco-pq-sdk.git"
   },
   "bugs": {
-    "url": "https://github.com/JackKXCO/kxco-pq-sdk/issues"
+    "url": "https://github.com/KnightsbridgeAIQ/kxco-pq-sdk/issues"
   },
   "type": "module",
   "sideEffects": false,
@@ -58,10 +58,10 @@
     "node": ">=20.19"
   },
   "dependencies": {
-    "kxco-post-quantum": "^1.1.6",
-    "kxco-pq-hsm": "^1.0.5",
-    "kxco-pq-audit": "^1.0.5",
-    "kxco-pq-attest": "^1.0.0"
+    "kxco-post-quantum": "^1.3.0",
+    "kxco-pq-hsm": "^1.0.9",
+    "kxco-pq-audit": "^1.1.4",
+    "kxco-pq-attest": "^1.1.3"
   },
   "scripts": {
     "test": "node --test --test-timeout=30000 test/identity.test.js"
