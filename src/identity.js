@@ -73,7 +73,7 @@ function verifyEnvelope(envelope, publicKey) {
   const msg = attestSigningMsg(payload, iss, parent_kid, role, authority, iat, exp, purpose, aud)
   let ok
   try {
-    ok = mlDsa.ml_dsa65.verify(new Uint8Array(publicKey), msg, fromB64url(signature))
+    ok = mlDsa.verify(new Uint8Array(publicKey), msg, Buffer.from(fromB64url(signature)).toString('hex'))
   } catch {
     ok = false
   }
@@ -192,7 +192,7 @@ export class KxcoIdentity {
     if (!this.#keypair?.secretKey) {
       throw new KxcoPqSdkError('this identity has no signing key — reconstruct with fromCredential({ keypair, credential })')
     }
-    return mlDsa.ml_dsa65.sign(new Uint8Array(this.#keypair.secretKey), new Uint8Array(message))
+    return Buffer.from(mlDsa.sign(new Uint8Array(this.#keypair.secretKey), new Uint8Array(message)), 'hex')
   }
 
   // ── Issue a credential for a user (institution identity only) ────────────
@@ -326,10 +326,10 @@ export class KxcoIdentity {
     const credMsg = credentialSigningMsg(credential)
     let credOk
     try {
-      credOk = mlDsa.ml_dsa65.verify(
+      credOk = mlDsa.verify(
         new Uint8Array(institutionPublicKey),
         credMsg,
-        fromB64url(credential.signature),
+        Buffer.from(fromB64url(credential.signature)).toString('hex'),
       )
     } catch {
       credOk = false
