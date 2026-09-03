@@ -2,6 +2,13 @@
 
 ## 2.0.0
 
+**`KxcoIdentity` exposes `publicKeyHex`.** kxco-pq-chain 2.1 sends the public
+key with a write so the chain can bind it to the registry record, and looks
+for exactly that property. Without it, handing a `KxcoIdentity` to `KxcoChain`
+fails with `PUBLIC_KEY_REQUIRED`, which made "upgrade the package and you are
+migrated" untrue for the identity type this SDK recommends. HSM-backed
+identities have it too: only the secret stays behind the hardware boundary.
+
 Re-exports the verification modes, and corrects a claim that should not have
 been made.
 

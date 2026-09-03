@@ -185,6 +185,26 @@ export class KxcoIdentity {
     return this.#keypair.publicKey
   }
 
+  /**
+   * This identity's ML-DSA public key as hex, or null when it is not held
+   * locally.
+   *
+   * kxco-pq-chain 2.1 sends the public key with a write so the chain can bind
+   * it to the registry record, and it looks for exactly this property. Without
+   * it, passing a KxcoIdentity to KxcoChain fails with PUBLIC_KEY_REQUIRED,
+   * which made "upgrade the package" untrue for the identity type this SDK
+   * tells people to use.
+   *
+   * A getter rather than a promise because that is the shape the client reads.
+   * An HSM-backed identity has one too: only the SECRET stays behind the
+   * hardware boundary, and keygen hands back the public key. Null is reserved
+   * for an identity reconstructed from a credential with no key material.
+   */
+  get publicKeyHex() {
+    const pk = this.#keypair?.publicKey
+    return pk ? Buffer.from(pk).toString('hex') : null
+  }
+
   // ── Raw signing (exposed for advanced use; prefer attest()) ──────────────
 
   async sign(message) {
