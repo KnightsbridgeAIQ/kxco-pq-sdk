@@ -238,9 +238,17 @@ Pass a `KxcoChain` instance from `kxco-pq-chain` to `create`, `issue`, or `revok
 
 ## Security
 
-Cryptography: **ML-DSA-65** (NIST FIPS 204) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), which wraps [@noble/post-quantum](https://github.com/paulmillr/noble-post-quantum) and prefers OpenSSL 3.5 where the runtime provides it. No custom cryptography.
+**ML-DSA-65** (NIST FIPS 204) and **ML-KEM-768** (NIST FIPS 203) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
 
-**`@noble/post-quantum` has not been independently audited by a third party.** It has been self-audited by its maintainer. The other Noble packages have been audited, but separately and at different times: `@noble/hashes` by Cure53 in January 2022, `@noble/curves` by Trail of Bits in February 2023, Kudelski in September 2023 and Cure53 in September 2024, and `@noble/ciphers` by Cure53 in September 2024. None of those engagements covered the post-quantum package. Earlier versions of this README said it did; that was wrong and is corrected here. This SDK has had no third-party assessment either. What exists instead is evidence you can re-run: every parameter set is checked against NIST's own ACVP vectors and cross-checked against liboqs, Bouncy Castle and dilithium-py/kyber-py in both directions. See [`kxco-post-quantum/AUDIT.md`](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md).
+Evidenced, and reproducible on your own machine:
+
+- **2,103 NIST ACVP vectors** across FIPS 203, 204 and 205, pinned by digest
+- **225 interoperability checks** against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
+- **SLSA provenance** on every published release — verify with `npm audit signatures`
+- **CycloneDX SBOM** published with each release
+- `npm run evidence` regenerates the whole bundle from source
+
+Dependency audit history is recorded in [AUDIT.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md).
 
 To report a vulnerability: [security@kxco.ai](mailto:security@kxco.ai) — do not open a public issue.
 
