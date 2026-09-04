@@ -31,7 +31,7 @@ Every release of this package is checkable without asking us for anything.
   Every GitHub Action is pinned by 40-character commit SHA.
 - **Conformance underneath.** The cryptography comes from
   [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), which
-  is run against **2,103 NIST ACVP vectors (0 failed)** and a **225-check
+  is run against **2,103 NIST ACVP vectors: 1,793 passed, 0 failed, 310 skipped** and a **225-check
   cross-implementation interoperability matrix** against liboqs, Bouncy Castle
   and two pure-Python implementations, in both directions and with negative
   controls. Its published tarball also rebuilds bit-for-bit from its own tag,
@@ -215,13 +215,14 @@ Pass a `KxcoChain` instance from `kxco-pq-chain` to `create`, `issue`, or `revok
 
 ---
 
-## What this does NOT do
+## Where this fits
 
-- No relay client — use `kxco-pq-chain` directly for chain communication
-- No agent identity — this package is for institutions and their issued users
-- No encrypted channels — attestation envelopes are signed, not encrypted
+Institutions and the users they issue credentials to. That is the whole scope,
+and the rest of the stack covers what sits either side.
 
----
+- [`kxco-pq-chain`](https://www.npmjs.com/package/kxco-pq-chain) for relay and chain communication
+- [`kxco-pq-attest`](https://www.npmjs.com/package/kxco-pq-attest) for signed envelopes over arbitrary payloads
+- [`kxco-pq-vault`](https://www.npmjs.com/package/kxco-pq-vault) when the payload must be encrypted rather than signed
 
 ## Part of the KXCO stack
 
@@ -238,7 +239,17 @@ Pass a `KxcoChain` instance from `kxco-pq-chain` to `create`, `issue`, or `revok
 
 ## Security
 
-Cryptography: **ML-DSA-65** (NIST FIPS 204) via [@noble/post-quantum](https://github.com/paulmillr/noble-post-quantum), independently audited by Cure53 in 2024. No custom cryptography.
+**ML-DSA-65** (NIST FIPS 204) and **ML-KEM-768** (NIST FIPS 203) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
+
+Evidenced, and reproducible on your own machine:
+
+- **2,103 NIST ACVP vectors** across FIPS 203, 204 and 205, pinned by digest: 1,793 passed, 0 failed, 310 skipped, where each skip is the library refusing a pre-hash weaker than the parameter set
+- **225 interoperability checks passed, 0 failed, 42 not applicable** against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
+- **SLSA provenance** on every published release — verify with `npm audit signatures`
+- **CycloneDX SBOM** published with each release
+- `npm run evidence` regenerates the whole bundle from source
+
+Dependency audit history is recorded in [AUDIT.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md).
 
 To report a vulnerability: [security@kxco.ai](mailto:security@kxco.ai) — do not open a public issue.
 

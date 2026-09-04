@@ -1,6 +1,6 @@
 import { test, before } from 'node:test'
 import assert from 'node:assert/strict'
-import { mlDsa } from 'kxco-post-quantum'
+import { mlDsa, fingerprint } from 'kxco-post-quantum'
 import { KxcoIdentity, AuditedHsm, AuditLog, PqHsm, MemoryBackend } from '../src/index.js'
 
 // Keypairs generated once — keygen is the slow step
@@ -401,4 +401,43 @@ test('AuditedHsm: institution identity works with AuditedHsm', async () => {
     institutionPublicKey: instPk,
   })
   assert.equal(result.valid, true)
+})
+
+// ── the property kxco-pq-chain 2.1 reads ───────────────────────────────────
+
+test('an institution identity exposes publicKeyHex', async () => {
+  // kxco-pq-chain 2.1 sends the public key with a write so the chain can bind
+  // it to the registry record, and it looks for exactly this property. Without
+  // it, handing a KxcoIdentity to KxcoChain fails with PUBLIC_KEY_REQUIRED,
+  // which made "upgrade the package" untrue for the identity type this SDK
+  // tells people to use.
+  const keypair = mlDsa.keypairFromMaster(Buffer.alloc(32, 0x21), 'publickeyhex-test')
+  const id = await KxcoIdentity.create({ keypair })
+
+  assert.equal(typeof id.publicKeyHex, 'string')
+  assert.equal(id.publicKeyHex.length, 1952 * 2, 'ML-DSA-65 public key is 1952 bytes')
+  assert.match(id.publicKeyHex, /^[0-9a-f]+$/)
+
+  // The property must describe THIS identity, not merely be well formed.
+  assert.equal(fingerprint(Buffer.from(id.publicKeyHex, 'hex')), id.kid)
+})
+
+test('an HSM-backed identity exposes its public key too', async () => {
+  // Only the SECRET stays behind the hardware boundary. keygen returns the
+  // public key, so the verified path works for HSM identities as well, and
+  // the getter must agree with the async accessor rather than diverge.
+  const pk = new Uint8Array(1952).fill(7)
+  const hsm = {
+    keygen: async () => ({ publicKey: pk }),
+    getPublicKey: async () => pk,
+    sign: async () => new Uint8Array(3309),
+  }
+  const id = await KxcoIdentity.create({ hsm, label: 'probe' })
+
+  assert.equal(id.publicKeyHex, Buffer.from(pk).toString('hex'))
+  assert.equal(
+    Buffer.from(await id.getPublicKey()).toString('hex'),
+    id.publicKeyHex,
+    'the getter and the async accessor must not disagree',
+  )
 })
