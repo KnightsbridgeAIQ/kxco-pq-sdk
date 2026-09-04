@@ -215,13 +215,14 @@ Pass a `KxcoChain` instance from `kxco-pq-chain` to `create`, `issue`, or `revok
 
 ---
 
-## What this does NOT do
+## Where this fits
 
-- No relay client — use `kxco-pq-chain` directly for chain communication
-- No agent identity — this package is for institutions and their issued users
-- No encrypted channels — attestation envelopes are signed, not encrypted
+Institutions and the users they issue credentials to. That is the whole scope,
+and the rest of the stack covers what sits either side.
 
----
+- [`kxco-pq-chain`](https://www.npmjs.com/package/kxco-pq-chain) for relay and chain communication
+- [`kxco-pq-attest`](https://www.npmjs.com/package/kxco-pq-attest) for signed envelopes over arbitrary payloads
+- [`kxco-pq-vault`](https://www.npmjs.com/package/kxco-pq-vault) when the payload must be encrypted rather than signed
 
 ## Part of the KXCO stack
 

@@ -1,7 +1,7 @@
 {
   "name": "kxco-pq-sdk",
   "version": "2.0.0",
-  "description": "Institution identity layer for the KXCO stack: ML-DSA-65 hierarchical credentials, HSM-backed signing, and optional on-chain anchoring via Armature L1.",
+  "description": "Institution identity for the KXCO stack: hierarchical ML-DSA-65 credentials, HSM-backed signing, and anchoring on Armature L1 where the chain verifies the signature in consensus rather than a server doing it.",
   "keywords": [
     "post-quantum",
     "pqc",
