@@ -53,7 +53,8 @@
   "files": [
     "src",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "ASSESSMENT.md"
   ],
   "engines": {
     "node": ">=20.19"
@@ -66,7 +67,8 @@
     "kxco-pq-network": "^1.0.0"
   },
   "scripts": {
-    "test": "node --test --test-timeout=30000 test/identity.test.js"
+    "test": "node --test --test-timeout=30000 test/identity.test.js",
+    "evidence": "node scripts/build-evidence.mjs"
   },
   "funding": "https://kxco.ai",
   "publishConfig": {
