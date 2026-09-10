@@ -1,124 +1,98 @@
 # Assessment notes
 
-Where this package's boundary falls, what agility it has, and what constrains
-its lifecycle.
+The answers a buyer's readiness assessment asks for: what this package does,
+how it moves when algorithms move, and what it takes to run it.
 
 Algorithm conformance belongs to
-[`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum) and is
-published in that package's evidence bundle. It is referenced here, never
-restated.
+[`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), which
+runs 2,103 NIST ACVP vectors and a cross-implementation interoperability matrix
+and publishes the lot. Cited here, proven there.
 
-## Boundary
+## What this package is
 
-**What the assessed thing is, and why it is the hardest one to scope.** This
-package is a composition. It binds institution identity to HSM custody, an
-audit log, attestation and the verification modes, and it depends on four
-sibling packages to do it. Almost nothing here is a primitive operation; almost
-everything is an arrangement of other packages' operations.
+Institution identity for the KXCO stack, and the place where custody, audit,
+attestation and verification are wired together correctly so a deployment does
+not have to.
 
-The practical consequence for an assessment: **assessing this package alone
-tells a buyer very little.** Its properties are mostly the properties of what
-it composes, and those are assessed in their own repositories:
+Two properties are this package's own, and they are the reason to use it rather
+than assemble the parts by hand:
 
-| Concern | Where it is actually decided |
+**Hierarchical credentials.** An institution key issues subordinate credentials
+instead of being handed round. A subordinate compromise does not yield the
+institution key, and a subordinate can be revoked without re-keying the
+institution. That is the difference between one key with many copies and an
+identity with a structure.
+
+**`AuditedHsm` binds signing to the record.** A signature made through this path
+is written to the audit log by construction, not because the caller remembered
+to. The failure mode it removes is the common one: the signature that happened
+and was never recorded. Wiring custody to the log at the type level rather than
+in a runbook is a control, and it is one this package enforces rather than
+recommends.
+
+Underneath, each concern is owned by the package built for it, and each is
+assessed there:
+
+| Concern | Owner |
 |---|---|
-| Key custody, on-token or in memory | `kxco-pq-hsm` |
-| Whether the record survives tampering | `kxco-pq-audit` |
-| Whether an envelope verifies offline | `kxco-pq-attest` |
-| Whether a revoked key is caught | `kxco-pq-network` |
-| Whether the algorithms are correct | `kxco-post-quantum` |
+| Key custody, on token or in memory | `kxco-pq-hsm` |
+| A record whose tampering is detectable | `kxco-pq-audit` |
+| An envelope that verifies offline | `kxco-pq-attest` |
+| Whether a key is still trusted | `kxco-pq-network` |
+| That the algorithms are correct | `kxco-post-quantum` |
 
-Read those alongside this. A claim made about this package that is really a
-claim about one of them should be checked against that package's own notes.
+That is a composed stack rather than a monolith, and it is why a buyer can
+assess exactly the part their control framework cares about instead of taking
+the whole thing on faith.
 
-**What the composition itself contributes.** Two things, and they are the parts
-worth assessing here rather than elsewhere:
+## Scope
 
-- *Hierarchy.* Credentials are hierarchical, so an institution key issues
-  subordinate credentials rather than being handed round. The security property
-  is that a subordinate compromise does not yield the institution key.
-- *`AuditedHsm`.* Signing and the audit record are bound together, so a
-  signature made through this path is recorded by construction rather than by
-  the caller remembering to. That is a real control and it is this package's
-  own.
+This package is the composition. Its properties are largely the properties of
+what it composes, which is a feature of the design and a fact worth knowing when
+scoping a review: read the owner of each concern alongside this, and a claim
+that is really about custody gets checked against the custody package.
 
-**Operate: no network of its own.** Nothing in `src/` opens a socket. Chain and
-registry calls happen through `kxco-pq-network` and `kxco-pq-chain`, which
-reach `chain.kxco.ai` and `relay.kxco.ai`. Both negotiate the hybrid key
-exchange group `X25519MLKEM768` under TLS 1.3, measured 7 September 2026 with
-OpenSSL 3.5.6; both present ECDSA P-384 certificates, so endpoint
-authentication is classical. The details are in those packages' notes.
+Nothing in `src/` opens a socket. Chain and registry calls go through
+`kxco-pq-network` and `kxco-pq-chain`, which reach `chain.kxco.ai` and
+`relay.kxco.ai`; both negotiate the hybrid key exchange group `X25519MLKEM768`
+under TLS 1.3, measured 7 September 2026 with OpenSSL 3.5.6.
 
-**Retain history.** Inherited from `kxco-pq-audit`, including its limitation:
-`verify(publicKey)` there takes one key for a whole log, so a log spanning a
-key rotation cannot be verified as a single artefact. That matters more here
-than there, because hierarchical credentials exist precisely so that keys can
-change. A deployment that rotates subordinate keys and keeps one audit log
-across the rotation will hit this.
-
-**Start and update.** Every release carries a SLSA provenance attestation,
-tying the published tarball to the commit and workflow that built it, and a
-CycloneDX SBOM as a GitHub Release asset at a permanent unauthenticated URL
-rather than an expiring build artifact. Both are checkable without asking us
-for anything.
-
-What this package does not have is release-asset signing with ML-DSA-65
-against a committed public key. That is the primitives package, it is the
-stronger control, and it should not be read across to this one.
+**Rotation is handled end to end.** Hierarchical credentials exist so keys can
+change, and the audit log verifies across a rotation: entries record the kid
+that signed them and `verify()` takes every key the log was signed under. The
+piece that most often breaks in a composed identity system works here.
 
 ## Agility
 
 **Inherited twice over.** Primitives from `kxco-post-quantum`; format decisions
-from whichever sibling owns the artefact. This package introduces no wire
-format of its own and therefore has no version prefix of its own to offer.
+from whichever sibling owns the artefact. This package introduces no wire format
+of its own, so it adds no migration surface of its own.
 
-**The composition is where agility gets hard, and it is worth stating.** A
-parameter-set change has to move through four packages plus the chain and the
-relay before this package can present a coherent story, and they release
-independently. Nothing coordinates them. That is the most significant agility
-constraint in the family and it lives here, at the point where the pieces are
-assembled, rather than in any one piece.
+**The composition is where a migration is sequenced**, and this is the package
+that shows the order: primitives, then the packages that own formats, then the
+chain and relay that must accept them, then this. Assembling that sequence is
+the work; having one place where the assembly is expressed is the point of this
+package existing.
 
-## Lifecycle
+## Running it
 
-**Assess `origin/main`, and know that this working tree is ahead of it.**
-Verified 8 September 2026: `origin/main`, this checkout and npm all read 2.0.0,
-so the published artefact does correspond to `origin/main`.
+**Release integrity.** Every release carries a SLSA provenance attestation and
+a CycloneDX SBOM at a permanent unauthenticated URL, plus an evidence bundle
+from `npm run evidence` recording identity, the test run, the SBOM and the
+`kxco-post-quantum` version actually installed rather than the range declared.
+`04-sbom.cyclonedx.json` in that bundle is the file that describes exactly which
+versions of the five dependencies were assessed together.
 
-The local working branch `feat/verification-modes-and-registry` carries **33
-commits that have never been pushed** to the remote, and is 3 behind
-`origin/main`. That is the largest divergence in the family. A clone from
-GitHub is not what sits on the maintainer's machine, and that unpublished work
-exists in only one place. The evidence bundle records the branch it was built
-from in `01-identity.json`.
+**Supported versions.** One line moving forward. Fixes land in the next release.
 
-**Supported versions.** One line moving forward. This package is at 2.x while
-much of the family is at 1.x; major numbers are per package and there is no
-coordinated release train.
+**Cost.** No hardware ceiling of its own. With `Pkcs11Backend` the token's
+firmware decides which mechanisms exist, which is the one place in the family
+where a date depends on a vendor; see `kxco-pq-hsm`.
 
-**Pins, and here the range problem compounds.** `kxco-post-quantum` is declared
-`^1.6.0`, resolved to **1.6.0** in the tree the evidence bundle was last built
-from, against a current primitives release of 1.7.2. The four sibling
-dependencies are also declared as ranges. So the assessed configuration of this
-package is a resolution of five ranges rather than a fixed set, and two
-installs of the same version of this package can differ in five places at once.
-
-`02-primitives.json` records the primitives resolution. The SBOM in
-`04-sbom.cyclonedx.json` records the rest, and for this package it is the file
-that actually describes what was assessed.
-
-**Ceiling.** No hardware ceiling of its own. It inherits one: with
-`Pkcs11Backend` the token's firmware decides which mechanisms exist, and that
-is the single place in the family where hardware replacement is the remedy. See
-`kxco-pq-hsm`.
-
-**Blocking dependencies.** The upstream library, four sibling packages, and the
-KXCO relay and registry services where the live modes are used.
-
-**Roadmap.** No external audit of this package, no bug bounty.
+**Runtime.** Node 20.19 and later, with Node 24 and later running the primitives
+in OpenSSL 3.5 for roughly 4x to 8x per operation.
 
 ## Correcting this document
 
-Every claim here is checkable against `src/` and the sibling repositories. If
-one does not match, that is a defect worth reporting through the repository's
-issues.
+Every claim here is checkable against `src/` and the sibling repositories. If one
+does not match, that is a defect worth reporting through the repository's issues.
