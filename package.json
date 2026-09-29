@@ -1,7 +1,7 @@
 {
   "name": "kxco-pq-sdk",
-  "version": "2.0.2",
-  "description": "Institution identity for the KXCO stack: hierarchical ML-DSA-65 credentials, HSM-backed signing, and anchoring on Armature L1 where the chain verifies the signature in consensus rather than a server doing it.",
+  "version": "2.0.3",
+  "description": "Post-quantum institution identity: issue ML-DSA-65 (NIST FIPS 204) credentials to your users and verify the whole chain offline. HSM-backed signing with every signature written to a tamper-evident audit log, and anchoring on Armature L1 where the chain verifies the signature in consensus.",
   "keywords": [
     "post-quantum",
     "pqc",
@@ -20,7 +20,14 @@
     "audit-log",
     "hsm",
     "verification-modes",
-    "revocation"
+    "revocation",
+    "pqc-migration",
+    "crypto-agility",
+    "non-repudiation",
+    "tamper-evident",
+    "pkcs11",
+    "credential-issuance",
+    "offline-verification"
   ],
   "license": "Apache-2.0",
   "author": "Shayne Heffernan and John Heffernan",

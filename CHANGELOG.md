@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.3
+
+Documentation. No source change.
+
+**The npm page leads with what the package proves.** The first screen now says what
+a credential carries, that the whole chain verifies offline, how every HSM
+signature reaches the audit log, the evidence underneath it and the migration
+dates set by NIST, Executive Order 14412, OMB M-26-15 and the UK NCSC.
+
+A family table maps every KXCO package to the job it does, and a new For
+institutions section sets out the operated services and how to reach us. The
+evidence documents are unchanged and linked from the page.
+
 ## 2.0.2
 
 Documentation. No source change.
