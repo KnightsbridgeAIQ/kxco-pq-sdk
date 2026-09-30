@@ -126,10 +126,12 @@ test('verifyChain: any changed credential field is refused, in value or in JSON 
         case 'role as a list': c.role = [c.role]; break
         case 'userKid as a list': c.userKid = [c.userKid]; break
         case 'issuedAt as a list': c.issuedAt = [c.issuedAt]; break
-        case 'authority as null': c.authority = null; break
-        case 'authority removed': delete c.authority; break
-        case 'metadata as null': c.metadata = null; break
-        case 'metadata removed': delete c.metadata; break
+        // Null or absent is signed as [] or {}, so these change the message only
+        // when there was something to drop.
+        case 'authority as null': fc.pre(c.authority.length > 0); c.authority = null; break
+        case 'authority removed': fc.pre(c.authority.length > 0); delete c.authority; break
+        case 'metadata as null': fc.pre(Object.keys(c.metadata).length > 0); c.metadata = null; break
+        case 'metadata removed': fc.pre(Object.keys(c.metadata).length > 0); delete c.metadata; break
         // Absent reads as empty text in the message; present, it becomes a list.
         case 'expiresAt as another type': c.expiresAt = c.expiresAt === undefined ? '' : [c.expiresAt]; break
       }

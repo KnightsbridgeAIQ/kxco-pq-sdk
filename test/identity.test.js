@@ -448,10 +448,8 @@ test('issue refuses a role that is not one line of well-formed text, and field t
     { role: 5 },
     { role: ['staff'] },
     { role: { toString: () => 'staff' } },
-    { role: 'staff', authority: null },
     { role: 'staff', authority: 'sign:x' },
     { role: 'staff', authority: { 0: 'sign:x' } },
-    { role: 'staff', metadata: null },
     { role: 'staff', metadata: ['a'] },
     { role: 'staff', metadata: 'a' },
   ]) {
@@ -520,20 +518,45 @@ test('a credential expiry that does not parse as a date is treated as expired', 
   }
 })
 
+test('authority and metadata that are null or absent read as the empty values they were signed as', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  const spellings = (cred) => {
+    const { authority: _a, ...noAuthority } = cred
+    const { metadata: _m, ...noMetadata } = cred
+    return [
+      ['authority null', { ...cred, authority: null }],
+      ['authority removed', noAuthority],
+      ['metadata null', { ...cred, metadata: null }],
+      ['metadata removed', noMetadata],
+    ]
+  }
+
+  // Issued empty, or issued with null, all four spellings carry the same signed bytes.
+  for (const opts of [{ role: 'staff' }, { role: 'staff', authority: null, metadata: null }]) {
+    const cred = await inst.issue(userKp.publicKey, opts)
+    const envelope = await KxcoIdentity.fromCredential({ keypair: userKp, credential: cred }).attest('doc')
+    assert.equal(KxcoIdentity.verifyChain({ envelope, credential: cred, institutionPublicKey: institutionKp.publicKey }).valid, true, JSON.stringify(opts))
+    for (const [name, credential] of spellings(cred)) {
+      assert.equal(KxcoIdentity.verifyChain({ envelope, credential, institutionPublicKey: institutionKp.publicKey }).valid, true, name)
+    }
+  }
+
+  // Issued with values, dropping them changes what was signed.
+  const full = await inst.issue(userKp.publicKey, { role: 'staff', authority: ['sign:x'], metadata: { k: 'v' } })
+  const envelope = await KxcoIdentity.fromCredential({ keypair: userKp, credential: full }).attest('doc')
+  for (const [name, credential] of spellings(full)) {
+    assert.equal(KxcoIdentity.verifyChain({ envelope, credential, institutionPublicKey: institutionKp.publicKey }).valid, false, name)
+  }
+})
+
 test('every signed credential field must be the type issue() writes', async () => {
   const inst = await KxcoIdentity.create({ keypair: institutionKp })
   const cred = await inst.issue(userKp.publicKey, { role: 'staff', expiresIn: '30d' })
   const user = KxcoIdentity.fromCredential({ keypair: userKp, credential: cred })
   const envelope = await user.attest('doc')
-  const { authority: _a, ...noAuthority } = cred
-  const { metadata: _m, ...noMetadata } = cred
   const { role: _r, ...noRole } = cred
   for (const [name, credential] of [
-    ['authority null', { ...cred, authority: null }],
-    ['authority removed', noAuthority],
     ['authority as an object', { ...cred, authority: {} }],
-    ['metadata null', { ...cred, metadata: null }],
-    ['metadata removed', noMetadata],
     ['metadata as a list', { ...cred, metadata: [] }],
     ['role as a list', { ...cred, role: ['staff'] }],
     ['role removed', noRole],

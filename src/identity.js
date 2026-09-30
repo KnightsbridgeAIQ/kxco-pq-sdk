@@ -98,8 +98,11 @@ function credentialFieldError(cred) {
     if (!isOneLine(cred[name])) return `${name} must be one line of well-formed text`
   }
   if (!optionalLine(cred.expiresAt)) return 'expiresAt must be one line of well-formed text'
-  if (!Array.isArray(cred.authority)) return 'authority must be an array'
-  if (!isObject(cred.metadata)) return 'metadata must be an object'
+  // Absent or null is signed exactly as [] and {} (the message writes
+  // `authority ?? []` and `metadata ?? {}`), so both spellings mean the same
+  // and credentials issued with either keep verifying.
+  if (!(cred.authority == null || Array.isArray(cred.authority))) return 'authority must be an array'
+  if (!(cred.metadata == null || isObject(cred.metadata))) return 'metadata must be an object'
   if (!allFinite(cred.authority) || !allFinite(cred.metadata)) {
     return 'authority and metadata may hold only finite numbers'
   }
