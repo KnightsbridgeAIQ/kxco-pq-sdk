@@ -54,6 +54,65 @@ function credentialSigningMsg(cred) {
   ].join('\n'))
 }
 
+// ── Field types ─────────────────────────────────────────────────────────────
+//
+// The signing messages are built from each field's text, so a field of
+// another type would be read as whatever its text happens to be: a
+// one-element array as its element, an object as its toString. Every field
+// that goes into a message has to be the type issue() or attest() writes.
+
+const isText         = (v) => typeof v === 'string' && v !== ''
+const isObject       = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+// Both messages are also one field per line. A text field holding a line
+// break would let the same signature cover the same bytes split into
+// different fields, so none may hold one. The text has to be well-formed
+// Unicode too, because an unpaired surrogate encodes to the same bytes as
+// U+FFFD. authority and metadata go in as JSON text, which escapes both.
+const isOneLine    = (v) => typeof v === 'string' && !/[\r\n]/.test(v) && v.isWellFormed()
+const optionalLine = (v) => v === undefined || isOneLine(v)
+
+// JSON text is one spelling of a value, except for a number too large for a
+// double: 1e400 reads as Infinity and writes as null, so it could stand in for
+// a signed null. authority and metadata may hold only finite numbers, however
+// deep. Walked with a list rather than by recursion, so no depth of nesting
+// can overflow the stack. -0 writes as 0 and is left alone, since the two
+// compare equal.
+function allFinite(value) {
+  const pending = [value]
+  const seen = new Set()
+  while (pending.length) {
+    const v = pending.pop()
+    if (typeof v === 'number') {
+      if (!Number.isFinite(v)) return false
+    } else if (v !== null && typeof v === 'object' && !seen.has(v)) {
+      seen.add(v)
+      for (const item of Object.values(v)) pending.push(item)
+    }
+  }
+  return true
+}
+
+function credentialFieldError(cred) {
+  for (const name of ['userKid', 'userPublicKey', 'issuedBy', 'role', 'issuedAt']) {
+    if (!isOneLine(cred[name])) return `${name} must be one line of well-formed text`
+  }
+  if (!optionalLine(cred.expiresAt)) return 'expiresAt must be one line of well-formed text'
+  if (!Array.isArray(cred.authority)) return 'authority must be an array'
+  if (!isObject(cred.metadata)) return 'metadata must be an object'
+  if (!allFinite(cred.authority) || !allFinite(cred.metadata)) {
+    return 'authority and metadata may hold only finite numbers'
+  }
+  return null
+}
+
+// An expiry nobody can read as a date is treated as passed. Read the other way,
+// it would never expire.
+function hasExpired(expiry) {
+  const at = new Date(expiry)
+  return Number.isNaN(at.getTime()) || at < new Date()
+}
+
 // ── Internal verify (no KxcoIdentity instance needed) ──────────────────────
 
 function verifyEnvelope(envelope, publicKey) {
@@ -64,15 +123,19 @@ function verifyEnvelope(envelope, publicKey) {
     return { valid: false, error: 'unsupported version' }
   }
   const { payload, iss, parent_kid, role, authority, iat, exp, purpose, aud, signature } = envelope
-  if (!payload || !iss || !iat || !signature) {
+  if (![payload, iss, iat].every(isOneLine) || !isText(iss) || !isText(iat) || !isText(signature) ||
+      ![parent_kid, role, exp, purpose, aud].every(optionalLine) ||
+      !(authority === undefined || (Array.isArray(authority) && allFinite(authority)))) {
     return { valid: false, error: 'malformed envelope' }
   }
-  if (exp && new Date(exp) < new Date()) {
+  if (exp !== undefined && hasExpired(exp)) {
     return { valid: false, error: 'expired' }
   }
-  const msg = attestSigningMsg(payload, iss, parent_kid, role, authority, iat, exp, purpose, aud)
   let ok
   try {
+    // Built inside the try: some runtimes cannot write JSON nested deeply
+    // enough, and an envelope that cannot be read back is not verified.
+    const msg = attestSigningMsg(payload, iss, parent_kid, role, authority, iat, exp, purpose, aud)
     ok = mlDsa.verify(new Uint8Array(publicKey), msg, Buffer.from(fromB64url(signature)).toString('hex'))
   } catch {
     ok = false
@@ -241,6 +304,9 @@ export class KxcoIdentity {
       issuedAt,
       ...(expiresAt && { expiresAt }),
     }
+    // Refused here rather than signed into a credential verifyChain refuses.
+    const problem = credentialFieldError(cred)
+    if (problem) throw new KxcoPqSdkError(`issue: ${problem}`)
 
     const sig = await this.sign(credentialSigningMsg(cred))
     cred.signature = b64url(sig)
@@ -282,6 +348,14 @@ export class KxcoIdentity {
   // ── Attest arbitrary data ─────────────────────────────────────────────────
 
   async attest(data, { purpose, aud, exp, context = {} } = {}) {
+    for (const [name, value] of [['purpose', purpose], ['aud', aud], ['exp', exp]]) {
+      if (value != null && !isOneLine(value)) {
+        throw new KxcoPqSdkError(`attest: ${name} must be one line of well-formed text`)
+      }
+    }
+    if (exp && Number.isNaN(new Date(exp).getTime())) {
+      throw new KxcoPqSdkError('attest: exp must be a date')
+    }
     let payloadBytes
     if (typeof data === 'string') {
       payloadBytes = enc.encode(data)
@@ -338,14 +412,18 @@ export class KxcoIdentity {
     if (!credential || credential['kxco-credential'] !== CREDENTIAL_VERSION) {
       return { valid: false, error: 'invalid credential' }
     }
-    if (credential.expiresAt && new Date(credential.expiresAt) < new Date()) {
+    if (credentialFieldError(credential) || typeof credential.signature !== 'string') {
+      return { valid: false, error: 'invalid credential' }
+    }
+    if (credential.expiresAt !== undefined && hasExpired(credential.expiresAt)) {
       return { valid: false, error: 'credential expired' }
     }
 
     // Verify the institution signed this credential
-    const credMsg = credentialSigningMsg(credential)
     let credOk
     try {
+      // Built inside the try, for the reason verifyEnvelope gives.
+      const credMsg = credentialSigningMsg(credential)
       credOk = mlDsa.verify(
         new Uint8Array(institutionPublicKey),
         credMsg,

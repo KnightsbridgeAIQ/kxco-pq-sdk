@@ -1,7 +1,7 @@
 import { test, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { mlDsa, fingerprint } from 'kxco-post-quantum'
-import { KxcoIdentity, AuditedHsm, AuditLog, PqHsm, MemoryBackend } from '../src/index.js'
+import { KxcoIdentity, KxcoPqSdkError, AuditedHsm, AuditLog, PqHsm, MemoryBackend } from '../src/index.js'
 
 // Keypairs generated once — keygen is the slow step
 let institutionKp, userKp, otherKp
@@ -420,6 +420,346 @@ test('an institution identity exposes publicKeyHex', async () => {
 
   // The property must describe THIS identity, not merely be well formed.
   assert.equal(fingerprint(Buffer.from(id.publicKeyHex, 'hex')), id.kid)
+})
+
+// ── field types, line breaks and empty data ─────────────────────────────
+
+// The version 1 credential signing message, as every issuer has written it.
+// Used to sign credentials that issue() itself no longer produces.
+function signCredentialV1(fields, secretKey) {
+  const msg = new TextEncoder().encode([
+    'kxco-credential-v1', fields.userKid, fields.userPublicKey, fields.issuedBy, fields.role,
+    JSON.stringify(fields.authority ?? []), JSON.stringify(fields.metadata ?? {}),
+    fields.issuedAt, fields.expiresAt ?? '',
+  ].join('\n'))
+  return { ...fields, signature: Buffer.from(mlDsa.sign(secretKey, msg), 'hex').toString('base64url') }
+}
+
+const viaJson = (value) => JSON.parse(JSON.stringify(value))
+const ODD = [{ toString: null }, { toString: 1 }, [{ toString: 1 }], { valueOf: null, toString: null }]
+
+test('issue refuses a role that is not one line of well-formed text, and field types verifyChain refuses', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  for (const opts of [
+    { role: 'viewer\n["admin:all"]' },
+    { role: 'viewer\r' },
+    { role: '\r\nadmin' },
+    { role: 'caf\uD800' },
+    { role: 5 },
+    { role: ['staff'] },
+    { role: { toString: () => 'staff' } },
+    { role: 'staff', authority: null },
+    { role: 'staff', authority: 'sign:x' },
+    { role: 'staff', authority: { 0: 'sign:x' } },
+    { role: 'staff', metadata: null },
+    { role: 'staff', metadata: ['a'] },
+    { role: 'staff', metadata: 'a' },
+  ]) {
+    await assert.rejects(
+      () => inst.issue(userKp.publicKey, opts),
+      (e) => e instanceof KxcoPqSdkError,
+      JSON.stringify(opts),
+    )
+  }
+  // Line breaks inside authority and metadata go in as JSON text, which escapes them.
+  const cred = await inst.issue(userKp.publicKey, {
+    role: 'staff', authority: ['a\nb'], metadata: { address: '1 High St\nLondon' },
+  })
+  const user = KxcoIdentity.fromCredential({ keypair: userKp, credential: cred })
+  const result = KxcoIdentity.verifyChain({
+    envelope: await user.attest('doc'), credential: viaJson(cred), institutionPublicKey: institutionKp.publicKey,
+  })
+  assert.equal(result.valid, true, result.error)
+  assert.equal(result.metadata.address, '1 High St\nLondon')
+})
+
+test('a credential signed over a line break in a text field is refused, and so is the same signature split another way', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  const user = KxcoIdentity.fromCredential({ keypair: userKp, credential: await inst.issue(userKp.publicKey, { role: 'staff' }) })
+  const envelope = await user.attest('doc')
+  const issuedAt = new Date().toISOString()
+  const cred = signCredentialV1({
+    'kxco-credential': '1',
+    userKid: fingerprint(userKp.publicKey),
+    userPublicKey: Buffer.from(userKp.publicKey).toString('base64url'),
+    issuedBy: inst.kid,
+    role: 'viewer\n["admin:all"]',
+    authority: [],
+    metadata: {},
+    issuedAt,
+    expiresAt: new Date(Date.now() + 86400000).toISOString(),
+  }, institutionKp.secretKey)
+  const split = {
+    ...cred, role: 'viewer', authority: ['admin:all'], metadata: [],
+    issuedAt: '{}', expiresAt: cred.issuedAt + '\n' + cred.expiresAt,
+  }
+  for (const credential of [cred, split]) {
+    assert.deepEqual(
+      KxcoIdentity.verifyChain({ envelope, credential: viaJson(credential), institutionPublicKey: institutionKp.publicKey }),
+      { valid: false, error: 'invalid credential' },
+    )
+  }
+})
+
+test('a credential expiry that does not parse as a date is treated as expired', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  const cred = await inst.issue(userKp.publicKey, { role: 'staff' })
+  const user = KxcoIdentity.fromCredential({ keypair: userKp, credential: cred })
+  const envelope = await user.attest('doc')
+  const signed = (expiresAt) => signCredentialV1({ ...cred, expiresAt }, institutionKp.secretKey)
+  for (const credential of [
+    signed('never'), signed('2026-13-45'), signed(''),
+    // No expiry was signed, and an empty one reads the same in the message.
+    { ...cred, expiresAt: '' },
+  ]) {
+    assert.deepEqual(
+      KxcoIdentity.verifyChain({ envelope, credential: viaJson(credential), institutionPublicKey: institutionKp.publicKey }),
+      { valid: false, error: 'credential expired' },
+      JSON.stringify(credential.expiresAt),
+    )
+  }
+})
+
+test('every signed credential field must be the type issue() writes', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  const cred = await inst.issue(userKp.publicKey, { role: 'staff', expiresIn: '30d' })
+  const user = KxcoIdentity.fromCredential({ keypair: userKp, credential: cred })
+  const envelope = await user.attest('doc')
+  const { authority: _a, ...noAuthority } = cred
+  const { metadata: _m, ...noMetadata } = cred
+  const { role: _r, ...noRole } = cred
+  for (const [name, credential] of [
+    ['authority null', { ...cred, authority: null }],
+    ['authority removed', noAuthority],
+    ['authority as an object', { ...cred, authority: {} }],
+    ['metadata null', { ...cred, metadata: null }],
+    ['metadata removed', noMetadata],
+    ['metadata as a list', { ...cred, metadata: [] }],
+    ['role as a list', { ...cred, role: ['staff'] }],
+    ['role removed', noRole],
+    ['expiresAt as a list', { ...cred, expiresAt: [cred.expiresAt] }],
+    ['expiresAt null', { ...cred, expiresAt: null }],
+    ['issuedAt as a list', { ...cred, issuedAt: [cred.issuedAt] }],
+    ['issuedBy as a list', { ...cred, issuedBy: [cred.issuedBy] }],
+    ['userKid as a list', { ...cred, userKid: [cred.userKid] }],
+    ['userPublicKey as a list', { ...cred, userPublicKey: [cred.userPublicKey] }],
+    ['signature as a list', { ...cred, signature: [cred.signature] }],
+  ]) {
+    assert.deepEqual(
+      KxcoIdentity.verifyChain({ envelope, credential: viaJson(credential), institutionPublicKey: institutionKp.publicKey }),
+      { valid: false, error: 'invalid credential' },
+      name,
+    )
+  }
+})
+
+test('empty data attests and verifies, through verify and through verifyChain', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  const cred = await inst.issue(userKp.publicKey, { role: 'staff' })
+  const user = KxcoIdentity.fromCredential({ keypair: userKp, credential: cred })
+  for (const empty of ['', new Uint8Array(0), Buffer.alloc(0)]) {
+    const own = await inst.verify(viaJson(await inst.attest(empty)))
+    assert.equal(own.valid, true, own.error)
+    assert.equal(own.payload.length, 0)
+    const chained = KxcoIdentity.verifyChain({
+      envelope: viaJson(await user.attest(empty)), credential: cred, institutionPublicKey: institutionKp.publicKey,
+    })
+    assert.equal(chained.valid, true, chained.error)
+    assert.equal(chained.payload.length, 0)
+  }
+})
+
+test('an envelope field of another type than attest writes is refused', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  const cred = await inst.issue(userKp.publicKey, { role: 'staff', authority: ['sign:x'] })
+  const user = KxcoIdentity.fromCredential({ keypair: userKp, credential: cred })
+  const env = await user.attest('doc', {
+    purpose: 'report', aud: 'FCA', exp: new Date(Date.now() + 3600000).toISOString(),
+  })
+  const plain = await user.attest('doc')
+  for (const [name, envelope] of [
+    ['payload', { ...env, payload: [env.payload] }],
+    ['iss', { ...env, iss: [env.iss] }],
+    ['iat', { ...env, iat: [env.iat] }],
+    ['role', { ...env, role: [env.role] }],
+    ['authority null', { ...env, authority: null }],
+    ['authority as text', { ...env, authority: '["sign:x"]' }],
+    ['parent_kid', { ...env, parent_kid: [env.parent_kid] }],
+    ['exp', { ...env, exp: [env.exp] }],
+    ['purpose', { ...env, purpose: [env.purpose] }],
+    ['aud', { ...env, aud: [env.aud] }],
+    ['purpose null', { ...plain, purpose: null }],
+    ['signature', { ...env, signature: [env.signature] }],
+  ]) {
+    assert.deepEqual(await user.verify(viaJson(envelope)), { valid: false, error: 'malformed envelope' }, name)
+    const chained = KxcoIdentity.verifyChain({ envelope: viaJson(envelope), credential: cred, institutionPublicKey: institutionKp.publicKey })
+    assert.equal(chained.valid, false, name)
+  }
+})
+
+test('verify and verifyChain return a result, never a throw, for JSON fields that carry their own toString', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  const cred = await inst.issue(userKp.publicKey, { role: 'staff', expiresIn: '30d' })
+  const user = KxcoIdentity.fromCredential({ keypair: userKp, credential: cred })
+  const env = await user.attest('doc', { purpose: 'report' })
+  const credentialFields = ['userKid', 'userPublicKey', 'issuedBy', 'role', 'authority', 'metadata', 'issuedAt', 'expiresAt', 'signature']
+  const envelopeFields = ['payload', 'iss', 'parent_kid', 'role', 'authority', 'iat', 'exp', 'purpose', 'aud', 'signature']
+  for (const odd of ODD) {
+    for (const field of credentialFields) {
+      const result = KxcoIdentity.verifyChain({
+        envelope: env, credential: viaJson({ ...cred, [field]: odd }), institutionPublicKey: institutionKp.publicKey,
+      })
+      assert.equal(result.valid, false, `credential ${field}`)
+    }
+    for (const field of envelopeFields) {
+      const envelope = viaJson({ ...env, [field]: odd })
+      assert.equal((await user.verify(envelope)).valid, false, `envelope ${field}`)
+      assert.equal(KxcoIdentity.verifyChain({ envelope, credential: cred, institutionPublicKey: institutionKp.publicKey }).valid, false)
+    }
+  }
+  // The two shapes first seen to throw.
+  assert.equal(KxcoIdentity.verifyChain({
+    envelope: {}, credential: JSON.parse('{"kxco-credential":"1","role":{"toString":null}}'), institutionPublicKey: institutionKp.publicKey,
+  }).valid, false)
+  assert.equal((await inst.verify(JSON.parse(
+    '{"kxco-identity-attest":"1","payload":"AA","iss":"x","iat":{"toString":null},"signature":"AA"}',
+  ))).valid, false)
+})
+
+test('attest refuses a purpose, audience or expiry that is not text', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  for (const opts of [{ purpose: 5 }, { aud: ['FCA'] }, { exp: new Date(Date.now() + 3600000) }, { exp: 0 }]) {
+    await assert.rejects(() => inst.attest('doc', opts), (e) => e instanceof KxcoPqSdkError, Object.keys(opts)[0])
+  }
+})
+
+// The version 1 envelope signing message, as attest has always written it.
+// Used to sign envelopes that attest() itself no longer produces.
+function signEnvelopeV1(fields, secretKey) {
+  const msg = new TextEncoder().encode([
+    'kxco-identity-attest-v1', fields.payload, fields.iss, fields.parent_kid ?? '', fields.role ?? '',
+    JSON.stringify(fields.authority ?? []), fields.iat, fields.exp ?? '', fields.purpose ?? '', fields.aud ?? '',
+  ].join('\n'))
+  return { ...fields, signature: Buffer.from(mlDsa.sign(secretKey, msg), 'hex').toString('base64url') }
+}
+
+test('attest refuses a purpose, audience or expiry that is not one line of well-formed text, and an expiry that is not a date', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  for (const opts of [
+    { purpose: 'invoice\nFCA' }, { aud: 'FCA\r' }, { purpose: '\r\n' }, { aud: 'caf\uD800' },
+    { exp: new Date(Date.now() + 3600000).toISOString() + '\n' }, { exp: 'never' },
+  ]) {
+    await assert.rejects(() => inst.attest('doc', opts), (e) => e instanceof KxcoPqSdkError, JSON.stringify(opts))
+  }
+})
+
+test('an envelope signed over a line break in a text field is refused, and so is the same signature split another way', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  const base = {
+    'kxco-identity-attest': '1', payload: Buffer.from('doc').toString('base64url'), iss: inst.kid, iat: new Date().toISOString(),
+  }
+  const signed = signEnvelopeV1({ ...base, purpose: 'invoice\nFCA' }, institutionKp.secretKey)
+  for (const [name, envelope] of [
+    ['as signed', signed],
+    ['into the audience', { ...signed, purpose: 'invoice', aud: 'FCA\n' }],
+    ['into the expiry', { ...signed, exp: '\ninvoice', purpose: 'FCA' }],
+    ['into the issue time', { ...signed, iat: signed.iat + '\n', exp: 'invoice', purpose: 'FCA' }],
+  ]) {
+    assert.deepEqual(await inst.verify(viaJson(envelope)), { valid: false, error: 'malformed envelope' }, name)
+  }
+  // An unpaired surrogate encodes to the same bytes as U+FFFD.
+  const replacement = signEnvelopeV1({ ...base, aud: 'caf�' }, institutionKp.secretKey)
+  assert.equal((await inst.verify(viaJson(replacement))).valid, true)
+  assert.deepEqual(await inst.verify({ ...replacement, aud: 'caf\uD800' }), { valid: false, error: 'malformed envelope' })
+})
+
+test('an envelope expiry that does not parse as a date is treated as expired', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  const base = {
+    'kxco-identity-attest': '1', payload: Buffer.from('doc').toString('base64url'), iss: inst.kid, iat: new Date().toISOString(),
+  }
+  for (const envelope of [
+    signEnvelopeV1({ ...base, exp: 'never' }, institutionKp.secretKey),
+    signEnvelopeV1({ ...base, exp: '2026-13-45' }, institutionKp.secretKey),
+    // No expiry was signed, and an empty one reads the same in the message.
+    { ...(await inst.attest('doc')), exp: '' },
+  ]) {
+    assert.deepEqual(await inst.verify(viaJson(envelope)), { valid: false, error: 'expired' }, JSON.stringify(envelope.exp))
+  }
+})
+
+test('a number that is not finite, anywhere inside authority or metadata, is refused at issue and at verify', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  for (const opts of [
+    { authority: [Infinity] }, { authority: ['a', [NaN]] },
+    { metadata: { a: -Infinity } }, { metadata: { a: [{ b: NaN }] } },
+  ]) {
+    await assert.rejects(
+      () => inst.issue(userKp.publicKey, { role: 'staff', ...opts }),
+      (e) => e instanceof KxcoPqSdkError,
+      Object.keys(opts)[0],
+    )
+  }
+
+  // 1e400 reads as Infinity and writes as null, so it could stand in for a signed null.
+  const cred = await inst.issue(userKp.publicKey, {
+    role: 'staff', authority: ['sign:x', null], metadata: { a: null, list: [[null]] },
+  })
+  const user = KxcoIdentity.fromCredential({ keypair: userKp, credential: cred })
+  const envelope = await user.attest('doc')
+  const text = JSON.stringify(cred)
+  const chain = (credential) =>
+    KxcoIdentity.verifyChain({ envelope, credential, institutionPublicKey: institutionKp.publicKey })
+  assert.equal(chain(JSON.parse(text)).valid, true)
+  for (const swapped of [
+    text.replace('"a":null', '"a":1e400'),
+    text.replace('"sign:x",null', '"sign:x",-1e400'),
+    text.replace('[[null]]', '[[1e400]]'),
+  ]) {
+    assert.notEqual(swapped, text)
+    assert.deepEqual(chain(JSON.parse(swapped)), { valid: false, error: 'invalid credential' })
+  }
+  const envSwapped = JSON.parse(JSON.stringify(envelope).replace('"sign:x",null', '"sign:x",1e400'))
+  assert.deepEqual(await user.verify(envSwapped), { valid: false, error: 'malformed envelope' })
+})
+
+test('authority and metadata nested to any depth give a result, never a throw, and a number that is not finite at the bottom is refused', async () => {
+  const inst = await KxcoIdentity.create({ keypair: institutionKp })
+  const cred = await inst.issue(userKp.publicKey, { role: 'staff' })
+  const user = KxcoIdentity.fromCredential({ keypair: userKp, credential: cred })
+  const enc = new TextEncoder()
+  const sign = (secretKey, message) => Buffer.from(mlDsa.sign(secretKey, enc.encode(message)), 'hex').toString('base64url')
+  // Written as text throughout, so the test itself never serialises the nesting.
+  const depth = 100000
+  const nested = (bottom) => '['.repeat(depth) + bottom + ']'.repeat(depth)
+  const issuedAt = new Date().toISOString()
+
+  const metadata = (bottom) => `{"a":null,"deep":${nested(bottom)}}`
+  const credSignature = sign(institutionKp.secretKey, [
+    'kxco-credential-v1', cred.userKid, cred.userPublicKey, inst.kid, 'staff', '[]', metadata('null'), issuedAt, '',
+  ].join('\n'))
+  const credential = (meta) => JSON.parse(
+    `{"kxco-credential":"1","userKid":"${cred.userKid}","userPublicKey":"${cred.userPublicKey}",` +
+    `"issuedBy":"${inst.kid}","role":"staff","authority":[],"metadata":${meta},` +
+    `"issuedAt":"${issuedAt}","signature":"${credSignature}"}`,
+  )
+  const payload = Buffer.from('doc').toString('base64url')
+  const envSignature = sign(userKp.secretKey, [
+    'kxco-identity-attest-v1', payload, cred.userKid, '', '', nested('null'), issuedAt, '', '', '',
+  ].join('\n'))
+  const envelope = (authority) => JSON.parse(
+    `{"kxco-identity-attest":"1","payload":"${payload}","iss":"${cred.userKid}",` +
+    `"authority":${authority},"iat":"${issuedAt}","signature":"${envSignature}"}`,
+  )
+  const plainEnvelope = await user.attest('doc')
+  const chain = (c, e = plainEnvelope) => KxcoIdentity.verifyChain({ envelope: e, credential: c, institutionPublicKey: institutionKp.publicKey })
+
+  // As signed. Whether a runtime can serialise this depth decides valid; it never throws.
+  assert.equal(typeof chain(credential(metadata('null'))).valid, 'boolean')
+  assert.equal(typeof (await user.verify(envelope(nested('null')))).valid, 'boolean')
+
+  assert.deepEqual(chain(credential(metadata('1e400'))), { valid: false, error: 'invalid credential' })
+  assert.deepEqual(await user.verify(envelope(nested('-1e400'))), { valid: false, error: 'malformed envelope' })
 })
 
 test('an HSM-backed identity exposes its public key too', async () => {
