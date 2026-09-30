@@ -15,7 +15,7 @@ Institution identity layer for the KXCO stack: ML-DSA-65 hierarchical credential
 
 - **Credentials with a structure.** The institution key signs a credential for each user, carrying a role and an authority list, so the institution key is never handed round and a user can be revoked without re-keying the institution.
 - **Offline verification.** `KxcoIdentity.verifyChain` checks the institution's signature on the credential, the user's signature on the envelope and every expiry, from those two objects and the institution's public key, with no network call.
-- **Every field is signed.** A credential's role, authority, metadata and expiry sit inside the institution's signature, and an envelope's issuer, purpose and audience inside the user's, each behind a version prefix.
+- **Every field it returns is signed.** A credential's role, authority, metadata and expiry sit inside the institution's signature, and an envelope's issuer, role, authority, expiry, purpose and audience inside the user's, each behind a version prefix. `verify` and `verifyChain` return only signed fields: `context` fields travel in the envelope unsigned, and are never returned.
 - **Keys on your HSM, every signature on the record.** PKCS#11 hardware, an encrypted file or memory behind one interface, and `AuditedHsm` writes each keygen, signature, decapsulation and deletion to a tamper-evident audit log by construction.
 - **Anchored on Armature L1 when you want it.** Pass a `KxcoChain` to `create`, `issue` or `revoke` and the institution, the credential or the revocation is recorded on chain.
 - **Proven underneath.** 1,793 NIST ACVP vectors passed, 0 failed, and 225 interoperability checks against liboqs, Bouncy Castle and the Python reference implementations, 0 failed, in [`kxco-post-quantum`](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/CONFORMANCE.md).
@@ -155,7 +155,7 @@ Signs arbitrary data and returns a self-contained envelope. `data` can be a stri
 | `purpose` | `string` | e.g. `'regulatory-report'`, `'trade-confirmation'` |
 | `aud` | `string` | Intended audience |
 | `exp` | `string` | ISO 8601 expiry |
-| `context` | `object` | Additional fields merged into the envelope |
+| `context` | `object` | Additional fields merged into the envelope. They are not signed, and `verify` and `verifyChain` never return them |
 
 ### `identity.sign(message)`
 

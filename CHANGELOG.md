@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.5
+
+Credential and envelope text fields must be one line of well-formed text, at
+issue, attest and verify. An expiry that does not parse as a date is treated as
+expired. authority and metadata may hold only finite numbers, and a null or
+absent authority or metadata reads as the empty value it is signed as.
+
+Field types are enforced, and verify and verifyChain return a result rather
+than throwing on JSON input. Empty data attests and verifies. The README says
+that `context` fields travel unsigned and are never returned.
+
 ## 2.0.4
 
 Documentation. No source change.
