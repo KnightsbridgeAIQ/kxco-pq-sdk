@@ -1,7 +1,6 @@
 # Changelog
 
-## Unreleased
-
+## 2.1.0
 **ML-DSA-87 identities.** `KxcoIdentity.create({ alg: 'ML-DSA-87' })` makes an
 ML-DSA-87 identity, randomly or through the hsm, which is asked for
 `ml-dsa-87`. A keypair brought in decides its own set, and `identity.alg`
