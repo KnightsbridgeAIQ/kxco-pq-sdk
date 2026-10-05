@@ -4,25 +4,39 @@ export class KxcoPqSdkError extends Error {
   name: 'KxcoPqSdkError'
 }
 
+/** The ML-DSA parameter sets an identity can hold. ML-DSA-65 is the default. */
+export type IdentityAlgorithm = 'ML-DSA-65' | 'ML-DSA-87'
+
 // ── Credential issued by an institution to a user ─────────────────────────
 
 export interface KxcoCredential {
   'kxco-credential': '1'
+  /**
+   * The issuing institution's signature algorithm, inside the signed bytes.
+   * Present on credentials an ML-DSA-87 institution issues; absent means
+   * ML-DSA-65, which is how every credential made before this field reads.
+   */
+  alg?: IdentityAlgorithm
   userKid: string
-  userPublicKey: string       // base64url-encoded ML-DSA-65 public key
+  userPublicKey: string       // base64url-encoded ML-DSA-65 or ML-DSA-87 public key
   issuedBy: string            // institution kid
   role: string
   authority: string[]
   metadata: Record<string, unknown>
   issuedAt: string            // ISO 8601
   expiresAt?: string          // ISO 8601
-  signature: string           // base64url, institution's ML-DSA-65 signature
+  signature: string           // base64url, the institution's ML-DSA signature, in the set `alg` names
 }
 
 // ── Signed attestation envelope ───────────────────────────────────────────
 
 export interface AttestationEnvelope {
   'kxco-identity-attest': '1'
+  /**
+   * The signer's algorithm, inside the signed bytes. Present on envelopes an
+   * ML-DSA-87 identity signs; absent means ML-DSA-65.
+   */
+  alg?: IdentityAlgorithm
   payload: string             // base64url-encoded data
   iss: string                 // signer kid
   parent_kid?: string
@@ -41,6 +55,8 @@ export interface AttestationEnvelope {
 export interface VerifyResult {
   valid: boolean
   error?: string
+  /** The parameter set the envelope was verified under, on success. */
+  alg?: IdentityAlgorithm
   payload?: Uint8Array
   iss?: string
   parent_kid?: string
@@ -75,6 +91,12 @@ export interface CreateOptions {
   auditLog?: import('kxco-pq-audit').AuditLog
   chain?: ChainClient
   metadataUrl?: string
+  /**
+   * The parameter set for a key made here, randomly or in the hsm. Defaults to
+   * 'ML-DSA-65'. A keypair brought in decides its own set, and an alg that
+   * disagrees with it is refused.
+   */
+  alg?: IdentityAlgorithm
 }
 
 export interface IssueOptions {
@@ -112,6 +134,8 @@ export class KxcoIdentity {
   readonly parentKid: string | null
   readonly credential: KxcoCredential | null
   readonly metadata: Record<string, unknown>
+  /** This identity's parameter set, read from its public key. */
+  readonly alg: IdentityAlgorithm
 
   /** Create an institution (root) identity. */
   static create(opts?: CreateOptions): Promise<KxcoIdentity>
@@ -125,10 +149,10 @@ export class KxcoIdentity {
   /** Verify a full credential chain without instantiating an identity. */
   static verifyChain(opts: VerifyChainOptions): ChainVerifyResult
 
-  /** Raw ML-DSA-65 public key bytes. */
+  /** Raw ML-DSA public key bytes: 1952 for ML-DSA-65, 2592 for ML-DSA-87. */
   getPublicKey(): Promise<Uint8Array>
 
-  /** Raw ML-DSA-65 signature over message. */
+  /** Raw ML-DSA signature over message, in the set the secret key belongs to. */
   sign(message: Uint8Array | Buffer): Promise<Uint8Array>
 
   /** Issue a signed credential to a user. Institution identities only. */
@@ -148,7 +172,7 @@ export class KxcoIdentity {
 
 export class AuditedHsm {
   constructor(hsm: import('kxco-pq-hsm').PqHsm, auditLog: import('kxco-pq-audit').AuditLog)
-  keygen(label: string, alg?: 'ml-dsa-65' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
+  keygen(label: string, alg?: 'ml-dsa-65' | 'ml-dsa-87' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
   sign(label: string, message: Uint8Array | Buffer): Promise<Uint8Array>
   decapsulate(label: string, ciphertext: Uint8Array | Buffer): Promise<Uint8Array>
   getPublicKey(label: string): Promise<Uint8Array>
@@ -178,6 +202,8 @@ export {
 export {
   mlDsa,
   mlKem,
+  mlDsa87,
+  mlKem1024,
   fingerprint,
   kidEquals,
 } from 'kxco-post-quantum'

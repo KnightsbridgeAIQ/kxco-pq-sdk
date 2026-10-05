@@ -1,9 +1,40 @@
-import { mlDsa } from 'kxco-post-quantum'
+import { mlDsa, mlDsa87 } from 'kxco-post-quantum'
 import { fingerprint } from 'kxco-post-quantum'
 import { KxcoPqSdkError } from './errors.js'
 
 const ATTEST_VERSION    = '1'
 const CREDENTIAL_VERSION = '1'
+
+// ── Parameter sets ──────────────────────────────────────────────────────────
+//
+// The KEY decides the algorithm: a key's length names its ML-DSA parameter
+// set. ML-DSA-65 is the default and the only set the v1 signing messages ever
+// meant. A record signed with ML-DSA-87 carries `alg: 'ML-DSA-87'` and is
+// signed over a v1.1 message, whose first line differs from v1 and whose
+// second line is the algorithm, so the algorithm is inside the signed bytes
+// and neither message can be read as the other. A record whose `alg` names
+// neither set is read as v1, which means ML-DSA-65: that is how every record
+// made before this field existed reads, including envelopes that carried an
+// unsigned `alg` among their context fields.
+const SETS = Object.freeze({
+  'ML-DSA-65': Object.freeze({ module: mlDsa,   hsmAlg: 'ml-dsa-65', publicKeyBytes: 1952, secretKeyBytes: 4032 }),
+  'ML-DSA-87': Object.freeze({ module: mlDsa87, hsmAlg: 'ml-dsa-87', publicKeyBytes: 2592, secretKeyBytes: 4896 }),
+})
+const DEFAULT_ALG = 'ML-DSA-65'
+
+function algForPublicKey(publicKey) {
+  for (const [name, set] of Object.entries(SETS)) if (publicKey?.length === set.publicKeyBytes) return name
+  return null
+}
+
+function algForSecretKey(secretKey) {
+  for (const [name, set] of Object.entries(SETS)) if (secretKey?.length === set.secretKeyBytes) return name
+  return null
+}
+
+// The algorithm a record states, or null when it states none this SDK reads,
+// in which case it is a v1 record and means ML-DSA-65.
+const statedAlg = (record) => (Object.hasOwn(SETS, record?.alg) ? record.alg : null)
 
 const enc = new TextEncoder()
 
@@ -25,9 +56,13 @@ function parseDuration(str) {
 
 // ── Signing messages ────────────────────────────────────────────────────────
 
-function attestSigningMsg(payloadB64, iss, parentKid, role, authority, iat, exp, purpose, aud) {
+function messageVersion(tag, alg) {
+  return alg === null ? [`${tag}-v1`] : [`${tag}-v1.1`, alg]
+}
+
+function attestSigningMsg(payloadB64, iss, parentKid, role, authority, iat, exp, purpose, aud, alg = null) {
   return enc.encode([
-    'kxco-identity-attest-v1',
+    ...messageVersion('kxco-identity-attest', alg),
     payloadB64,
     iss,
     parentKid  ?? '',
@@ -42,7 +77,7 @@ function attestSigningMsg(payloadB64, iss, parentKid, role, authority, iat, exp,
 
 function credentialSigningMsg(cred) {
   return enc.encode([
-    'kxco-credential-v1',
+    ...messageVersion('kxco-credential', statedAlg(cred)),
     cred.userKid,
     cred.userPublicKey,
     cred.issuedBy,
@@ -134,18 +169,28 @@ function verifyEnvelope(envelope, publicKey) {
   if (exp !== undefined && hasExpired(exp)) {
     return { valid: false, error: 'expired' }
   }
+  // The key decides. A key of neither set verifies nothing, as before; a key
+  // of the other set from the one the envelope states is refused, not tried.
+  const stated = statedAlg(envelope)
+  const alg = stated ?? DEFAULT_ALG
+  const keyAlg = algForPublicKey(publicKey)
+  if (keyAlg !== null && keyAlg !== alg) {
+    return { valid: false, error: 'algorithm does not match key' }
+  }
   let ok
   try {
     // Built inside the try: some runtimes cannot write JSON nested deeply
     // enough, and an envelope that cannot be read back is not verified.
-    const msg = attestSigningMsg(payload, iss, parent_kid, role, authority, iat, exp, purpose, aud)
-    ok = mlDsa.verify(new Uint8Array(publicKey), msg, Buffer.from(fromB64url(signature)).toString('hex'))
+    const msg = attestSigningMsg(payload, iss, parent_kid, role, authority, iat, exp, purpose, aud, stated)
+    ok = keyAlg !== null &&
+      SETS[alg].module.verify(new Uint8Array(publicKey), msg, Buffer.from(fromB64url(signature)).toString('hex'))
   } catch {
     ok = false
   }
   if (!ok) return { valid: false, error: 'signature invalid' }
   return {
     valid:     true,
+    alg,
     payload:   fromB64url(payload),
     iss,
     ...(parent_kid && { parent_kid }),
@@ -190,23 +235,51 @@ export class KxcoIdentity {
   get credential() { return this.#credential ? { ...this.#credential } : null }
   get metadata()   { return { ...this.#metadata } }
 
+  /**
+   * This identity's ML-DSA parameter set, 'ML-DSA-65' or 'ML-DSA-87', read
+   * from its public key. An identity reconstructed from a credential without
+   * key material reads it from the credential's user key.
+   */
+  get alg() {
+    const pk = this.#keypair?.publicKey ??
+      (this.#credential ? fromB64url(this.#credential.userPublicKey) : null)
+    return algForPublicKey(pk) ?? DEFAULT_ALG
+  }
+
   // ── Factory: institution identity ────────────────────────────────────────
 
-  static async create({ keypair, hsm, label, auditLog, chain, metadataUrl } = {}) {
+  static async create({ keypair, hsm, label, auditLog, chain, metadataUrl, alg } = {}) {
     let kid, kp = null, hsmRef = null, hsmLabel = null
+
+    // `alg` picks the parameter set for a key made here, and defaults to
+    // ML-DSA-65. A keypair brought in decides its own set, and an `alg` that
+    // disagrees with it is refused rather than believed.
+    if (alg !== undefined && !Object.hasOwn(SETS, alg)) {
+      throw new KxcoPqSdkError(`alg must be 'ML-DSA-65' or 'ML-DSA-87', got ${JSON.stringify(alg)}`)
+    }
+    const wanted = alg ?? DEFAULT_ALG
 
     if (hsm) {
       if (!label) throw new KxcoPqSdkError('label is required when using hsm')
-      const { publicKey } = await hsm.keygen(label, 'ml-dsa-65')
+      const { publicKey } = await hsm.keygen(label, SETS[wanted].hsmAlg)
+      if (algForPublicKey(publicKey) !== wanted) {
+        throw new KxcoPqSdkError(`the hsm returned a key that is not ${wanted}`)
+      }
       kid      = fingerprint(publicKey)
       kp       = { publicKey }
       hsmRef   = hsm
       hsmLabel = label
     } else if (keypair) {
+      const keyAlg = algForPublicKey(keypair.publicKey)
+      if (alg !== undefined && keyAlg !== alg) {
+        throw new KxcoPqSdkError(`alg is ${alg} but the keypair is ${keyAlg ?? 'neither ML-DSA-65 nor ML-DSA-87'}`)
+      }
       kid = fingerprint(keypair.publicKey)
       kp  = keypair
     } else {
-      kp  = mlDsa.ml_dsa65.keygen()
+      // Random keygen has no wrapper equivalent; the raw keygen is reached
+      // through the wrapper's own re-export, as ML-DSA-65 always has been.
+      kp  = wanted === 'ML-DSA-87' ? mlDsa87.ml_dsa87.keygen() : mlDsa.ml_dsa65.keygen()
       kid = fingerprint(kp.publicKey)
     }
 
@@ -278,7 +351,10 @@ export class KxcoIdentity {
     if (!this.#keypair?.secretKey) {
       throw new KxcoPqSdkError('this identity has no signing key — reconstruct with fromCredential({ keypair, credential })')
     }
-    return Buffer.from(mlDsa.sign(new Uint8Array(this.#keypair.secretKey), new Uint8Array(message)), 'hex')
+    // The secret key decides which set signs.
+    const alg = algForSecretKey(this.#keypair.secretKey)
+    if (alg === null) throw new KxcoPqSdkError('the secret key is neither ML-DSA-65 nor ML-DSA-87')
+    return Buffer.from(SETS[alg].module.sign(new Uint8Array(this.#keypair.secretKey), new Uint8Array(message)), 'hex')
   }
 
   // ── Issue a credential for a user (institution identity only) ────────────
@@ -296,8 +372,12 @@ export class KxcoIdentity {
       ? new Date(Date.now() + parseDuration(expiresIn)).toISOString()
       : undefined
 
+    // ML-DSA-65 credentials keep exactly the v1 shape; an ML-DSA-87 issuer
+    // records its algorithm, which puts the credential on the v1.1 message.
+    const issuerAlg = this.alg
     const cred = {
       'kxco-credential': CREDENTIAL_VERSION,
+      ...(issuerAlg !== DEFAULT_ALG && { alg: issuerAlg }),
       userKid,
       userPublicKey: b64url(userKeyBytes),
       issuedBy:     this.#kid,
@@ -371,6 +451,14 @@ export class KxcoIdentity {
 
     const iat = new Date().toISOString()
 
+    // The signer's algorithm, recorded only for ML-DSA-87 so ML-DSA-65
+    // envelopes keep exactly the v1 shape. Context fields are unsigned, so one
+    // may not claim to be the signer's algorithm.
+    const signerAlg = this.alg === DEFAULT_ALG ? null : this.alg
+    if (Object.hasOwn(SETS, context?.alg)) {
+      throw new KxcoPqSdkError('attest: context may not set alg; it names the signing algorithm')
+    }
+
     const envelope = {
       'kxco-identity-attest': ATTEST_VERSION,
       payload:   payloadB64,
@@ -383,6 +471,7 @@ export class KxcoIdentity {
       ...(purpose && { purpose }),
       ...(aud     && { aud }),
       ...context,
+      ...(signerAlg && { alg: signerAlg }),
     }
 
     const msg = attestSigningMsg(
@@ -395,6 +484,7 @@ export class KxcoIdentity {
       exp     ?? null,
       purpose ?? null,
       aud     ?? null,
+      signerAlg,
     )
 
     const sig = await this.sign(msg)
@@ -422,12 +512,19 @@ export class KxcoIdentity {
       return { valid: false, error: 'credential expired' }
     }
 
-    // Verify the institution signed this credential
+    // Verify the institution signed this credential. The institution's key
+    // decides the algorithm; a credential that states the other set from it is
+    // refused rather than tried.
+    const credAlg = statedAlg(credential) ?? DEFAULT_ALG
+    const institutionAlg = algForPublicKey(institutionPublicKey)
+    if (institutionAlg !== null && institutionAlg !== credAlg) {
+      return { valid: false, error: 'credential algorithm does not match the institution key' }
+    }
     let credOk
     try {
       // Built inside the try, for the reason verifyEnvelope gives.
       const credMsg = credentialSigningMsg(credential)
-      credOk = mlDsa.verify(
+      credOk = institutionAlg !== null && SETS[credAlg].module.verify(
         new Uint8Array(institutionPublicKey),
         credMsg,
         Buffer.from(fromB64url(credential.signature)).toString('hex'),
