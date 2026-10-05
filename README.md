@@ -106,7 +106,7 @@ between free and paid is set out in
 
 ### `KxcoIdentity.create(opts?)`
 
-Creates an institution (root) identity. Generates a new ML-DSA-65 keypair unless `keypair` or `hsm` is supplied.
+Creates an institution (root) identity. Generates a new ML-DSA-65 keypair, or an ML-DSA-87 one with `alg: 'ML-DSA-87'`, unless `keypair` or `hsm` is supplied.
 
 | Option | Type | Description |
 |---|---|---|
@@ -116,6 +116,7 @@ Creates an institution (root) identity. Generates a new ML-DSA-65 keypair unless
 | `auditLog` | `AuditLog` | Logs `identity:created` |
 | `chain` | `KxcoChain` | Registers institution on Armature L1 |
 | `metadataUrl` | `string` | Passed to chain registration |
+| `alg` | `'ML-DSA-65' \| 'ML-DSA-87'` | Parameter set for a key generated here or in the `hsm`. Defaults to `'ML-DSA-65'`. A `keypair` decides its own set, and a stated `alg` that disagrees with it is refused |
 
 ### `institution.issue(userPublicKey, opts)`
 
@@ -131,6 +132,11 @@ Issues a signed credential to a user. Institution identities only.
 | `chain` | `KxcoChain` | Anchors credential on Armature L1 |
 
 Returns a plain JSON object. Serialise and deliver to the user over HTTP.
+
+An ML-DSA-65 institution issues exactly the credential it always has. An
+ML-DSA-87 institution's credential carries `alg: 'ML-DSA-87'` and is signed over
+`kxco-credential-v1.1`, which puts the algorithm on the second line of the
+signed message. The user's key may be of either set; its length decides.
 
 ### `institution.revoke(userKid, opts?)`
 
@@ -155,15 +161,23 @@ Signs arbitrary data and returns a self-contained envelope. `data` can be a stri
 | `purpose` | `string` | e.g. `'regulatory-report'`, `'trade-confirmation'` |
 | `aud` | `string` | Intended audience |
 | `exp` | `string` | ISO 8601 expiry |
-| `context` | `object` | Additional fields merged into the envelope. They are not signed, and `verify` and `verifyChain` never return them |
+| `context` | `object` | Additional fields merged into the envelope. They are not signed, and `verify` and `verifyChain` never return them. A context `alg` naming `'ML-DSA-65'` or `'ML-DSA-87'` is refused, because `alg` names the signing algorithm |
 
+An ML-DSA-87 identity's envelope carries `alg: 'ML-DSA-87'` and is signed over
+`kxco-identity-attest-v1.1`, with the algorithm on the second line. An ML-DSA-65
+envelope is unchanged.
 ### `identity.sign(message)`
 
-Raw ML-DSA-65 signing. Returns a `Uint8Array` signature. Prefer `attest()` for structured envelopes.
+Raw ML-DSA signing in the set the secret key belongs to. Returns a `Uint8Array` signature. Prefer `attest()` for structured envelopes.
 
 ### `identity.verify(envelope)`
 
-Verifies that this identity signed the envelope. Returns `{ valid, payload, iss, role, authority, iat, ... }`.
+Verifies that this identity signed the envelope. Returns `{ valid, alg, payload, iss, role, authority, iat, ... }`.
+
+The key decides the algorithm. An envelope with no `alg`, or one naming neither
+set, is read as ML-DSA-65, which is how every envelope made before the field
+reads. An envelope whose `alg` names the other set from the key is refused with
+`'algorithm does not match key'`.
 
 ### `KxcoIdentity.verifyChain({ envelope, credential, institutionPublicKey })`
 
@@ -178,6 +192,11 @@ const result = KxcoIdentity.verifyChain({
 // result.valid, result.role, result.authority, result.metadata, result.issuedBy
 ```
 
+The institution key decides the credential's algorithm in the same way: a
+credential whose `alg` names the other set from `institutionPublicKey` is refused
+with `'credential algorithm does not match the institution key'`. `result.alg`
+is the set the user's envelope verified under.
+
 ### Identity properties
 
 | Property | Institution | User |
@@ -188,6 +207,7 @@ const result = KxcoIdentity.verifyChain({
 | `parentKid` | `null` | institution kid |
 | `credential` | `null` | signed credential object |
 | `metadata` | `{}` | `{}` |
+| `alg` | `'ML-DSA-65'` or `'ML-DSA-87'`, from the key | the same, from the user's key |
 
 ## HSM backends
 

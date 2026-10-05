@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+**ML-DSA-87 identities.** `KxcoIdentity.create({ alg: 'ML-DSA-87' })` makes an
+ML-DSA-87 identity, randomly or through the hsm, which is asked for
+`ml-dsa-87`. A keypair brought in decides its own set, and `identity.alg`
+reports it. ML-DSA-65 stays the default.
+
+**The algorithm travels with the signature.** An ML-DSA-87 institution's
+credential carries `alg: 'ML-DSA-87'`, and an ML-DSA-87 identity's envelope does
+the same, each signed over a v1.1 message (`kxco-credential-v1.1`,
+`kxco-identity-attest-v1.1`) whose second line is the algorithm, so it is inside
+the signed bytes. ML-DSA-65 credentials and envelopes keep exactly the v1 shape
+and bytes, so they still verify under earlier versions; a record with no `alg`
+is read as ML-DSA-65, and a test verifies records made by 2.0.5.
+
+**The key decides on verification.** `verify` and `verifyChain` verify under the
+set the key belongs to, and refuse a record naming the other set. `verify`
+results carry `alg`. A context field may no longer claim to be the signing
+algorithm.
+
+`mlDsa87` and `mlKem1024` are re-exported from `kxco-post-quantum`.
+
 ## 2.0.5
 
 Credential and envelope text fields must be one line of well-formed text, at
