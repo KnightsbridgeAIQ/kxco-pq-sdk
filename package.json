@@ -68,7 +68,7 @@
     "node": ">=20.19"
   },
   "dependencies": {
-    "kxco-post-quantum": "^1.6.0",
+    "kxco-post-quantum": "^1.7.8",
     "kxco-pq-hsm": "^1.4.6",
     "kxco-pq-audit": "^1.1.5",
     "kxco-pq-attest": "^2.0.7",
