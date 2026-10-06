@@ -1,11 +1,12 @@
 {
   "name": "kxco-pq-sdk",
-  "version": "2.1.0",
-  "description": "Post-quantum institution identity: issue ML-DSA-65 (NIST FIPS 204) credentials to your users and verify the whole chain offline. HSM-backed signing with every signature written to a tamper-evident audit log, and anchoring on Armature L1 where the chain verifies the signature in consensus.",
+  "version": "2.1.1",
+  "description": "Post-quantum institution identity: issue ML-DSA-87 and ML-DSA-65 credentials to your users and verify the whole chain offline. HSM-backed signing, every signature written to a tamper-evident audit log, and anchoring on Armature L1, verified in consensus.",
   "keywords": [
     "post-quantum",
     "pqc",
     "ml-dsa",
+    "ml-dsa-87",
     "nist",
     "fips-204",
     "identity",

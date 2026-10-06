@@ -1,6 +1,6 @@
 # kxco-pq-sdk
 
-**Post-quantum institution identity: issue ML-DSA-65 credentials to your users and verify the whole chain offline.**
+**Post-quantum institution identity: issue ML-DSA-87 and ML-DSA-65 credentials to your users and verify the whole chain offline.**
 
 [![npm](https://img.shields.io/npm/v/kxco-pq-sdk?label=npm&color=b0964f)](https://www.npmjs.com/package/kxco-pq-sdk)
 [![downloads](https://img.shields.io/npm/dm/kxco-pq-sdk?label=downloads&color=b0964f)](https://www.npmjs.com/package/kxco-pq-sdk)
@@ -11,7 +11,7 @@
 [![node](https://img.shields.io/node/v/kxco-pq-sdk.svg)](https://nodejs.org)
 [![CI](https://github.com/KnightsbridgeAIQ/kxco-pq-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/KnightsbridgeAIQ/kxco-pq-sdk/actions/workflows/ci.yml)
 
-Institution identity layer for the KXCO stack: ML-DSA-65 hierarchical credentials, HSM-backed signing, and optional on-chain anchoring via Armature L1.
+Institution identity layer for the KXCO stack: ML-DSA-87 and ML-DSA-65 hierarchical credentials, HSM-backed signing, and optional on-chain anchoring via Armature L1.
 
 - **Credentials with a structure.** The institution key signs a credential for each user, carrying a role and an authority list, so the institution key is never handed round and a user can be revoked without re-keying the institution.
 - **Offline verification.** `KxcoIdentity.verifyChain` checks the institution's signature on the credential, the user's signature on the envelope and every expiry, from those two objects and the institution's public key, with no network call.
@@ -272,7 +272,7 @@ above it.
 
 ## Security
 
-**ML-DSA-65** (NIST FIPS 204) and **ML-KEM-768** (NIST FIPS 203) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
+**ML-DSA-87**, **ML-DSA-65** (NIST FIPS 204) and **ML-KEM-768** (NIST FIPS 203) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
 
 Evidenced, and reproducible on your own machine:
 
