@@ -32,6 +32,7 @@ export {
 // kxco-post-quantum
 export { mlDsa, mlKem, fingerprint, kidEquals, seed, jws, backend } from 'kxco-post-quantum'
 
-// The Category 5 parameter sets. ML-DSA-65 and ML-KEM-768 above stay the
-// default; an identity made with `alg: 'ML-DSA-87'` signs through mlDsa87.
+// The Category 5 parameter sets. A new identity is ML-DSA-87 and signs
+// through mlDsa87; mlDsa above is ML-DSA-65, for an identity made with
+// `alg: 'ML-DSA-65'` or from an ML-DSA-65 key.
 export { mlDsa87, mlKem1024 } from 'kxco-post-quantum'
