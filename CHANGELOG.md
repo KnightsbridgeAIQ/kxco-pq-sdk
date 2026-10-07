@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.1
+
+Documentation. No source change.
+
+The package description, the opening of the README and the keywords now say
+what 2.1.0 already does: an institution issues ML-DSA-87 credentials as well as
+ML-DSA-65 ones, and `verifyChain` checks both. The description now fits the
+255 characters the npm registry keeps, so it no longer ends mid-sentence.
+`ml-dsa-87` joins the keywords.
+
 ## 2.1.0
 **ML-DSA-87 identities.** `KxcoIdentity.create({ alg: 'ML-DSA-87' })` makes an
 ML-DSA-87 identity, randomly or through the hsm, which is asked for
