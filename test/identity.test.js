@@ -789,11 +789,11 @@ test('an HSM-backed identity exposes its public key too', async () => {
   // Only the SECRET stays behind the hardware boundary. keygen returns the
   // public key, so the verified path works for HSM identities as well, and
   // the getter must agree with the async accessor rather than diverge.
-  const pk = new Uint8Array(1952).fill(7)
+  const pk = new Uint8Array(2592).fill(7)
   const hsm = {
     keygen: async () => ({ publicKey: pk }),
     getPublicKey: async () => pk,
-    sign: async () => new Uint8Array(3309),
+    sign: async () => new Uint8Array(4627),
   }
   const id = await KxcoIdentity.create({ hsm, label: 'probe' })
 

@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.2.0 (2026-10-07)
+
+**ML-DSA-87 is the default.** `KxcoIdentity.create()` with no `alg` now makes
+an ML-DSA-87 identity, randomly or through the hsm, which is asked for
+`ml-dsa-87`. Its public key is 2592 bytes and its signatures 4627 bytes, and
+its credentials and envelopes carry `alg: 'ML-DSA-87'` and are signed over the
+v1.1 messages. `AuditedHsm.keygen(label)` with no algorithm makes an
+`ml-dsa-87` key and logs it as one.
+
+Passing `alg: 'ML-DSA-65'` to `create`, or `'ml-dsa-65'` to
+`AuditedHsm.keygen`, keeps the old behaviour: an ML-DSA-65 key, with
+credentials and envelopes in exactly the v1 shape and bytes.
+
+Existing keys are unaffected. The key decides the set, so an identity made from
+an ML-DSA-65 keypair signs and verifies as ML-DSA-65, and a record with no
+`alg` is still read as ML-DSA-65.
+
+The kxco-pq-hsm floor is raised to 1.5.0, the first release that generates
+ML-DSA-87 keys, because an identity made through the hsm now asks for one.
+
 ## 2.1.1
 
 Documentation. No source change.

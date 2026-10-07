@@ -6,7 +6,7 @@ import { test, before } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { mlDsa, mlDsa87 as wrapperMlDsa87, mlKem1024 as wrapperMlKem1024, fingerprint } from 'kxco-post-quantum'
-import { KxcoIdentity, KxcoPqSdkError, mlDsa87, mlKem1024 } from '../src/index.js'
+import { KxcoIdentity, KxcoPqSdkError, mlDsa87, mlKem1024, AuditedHsm, AuditLog, PqHsm, MemoryBackend } from '../src/index.js'
 
 const LEGACY = JSON.parse(readFileSync(new URL('./fixtures/legacy-65.json', import.meta.url), 'utf-8'))
 const verifyChain = (envelope, credential, institutionPublicKey) =>
@@ -33,10 +33,111 @@ test("create({ alg: 'ML-DSA-87' }): a random ML-DSA-87 identity", async () => {
   assert.equal(id.kid, fingerprint(await id.getPublicKey()))
 })
 
-test('create: ML-DSA-65 stays the default, and a keypair decides its own set', async () => {
-  assert.equal((await KxcoIdentity.create()).alg, 'ML-DSA-65')
+test('create: ML-DSA-87 is the default, ML-DSA-65 is made when asked for, and a keypair decides its own set', async () => {
+  const byDefault = await KxcoIdentity.create()
+  assert.equal(byDefault.alg, 'ML-DSA-87')
+  assert.equal((await byDefault.getPublicKey()).length, 2592)
+  const asked65 = await KxcoIdentity.create({ alg: 'ML-DSA-65' })
+  assert.equal(asked65.alg, 'ML-DSA-65')
+  assert.equal((await asked65.getPublicKey()).length, 1952)
   assert.equal((await KxcoIdentity.create({ keypair: i87 })).alg, 'ML-DSA-87')
   assert.equal((await KxcoIdentity.create({ keypair: i65 })).alg, 'ML-DSA-65')
+})
+
+test('a default identity signs ML-DSA-87: 4627-byte signatures, the alg in the envelope and the credential, and the chain verifies', async () => {
+  const inst = await KxcoIdentity.create()
+  const env = await inst.attest('by default')
+  assert.equal(env.alg, 'ML-DSA-87')
+  assert.equal(Buffer.from(env.signature, 'base64url').length, 4627)
+  const own = await inst.verify(env)
+  assert.equal(own.valid, true)
+  assert.equal(own.alg, 'ML-DSA-87')
+
+  const cred = await inst.issue(u87.publicKey, { role: 'signer' })
+  assert.equal(cred.alg, 'ML-DSA-87')
+  assert.equal(Buffer.from(cred.signature, 'base64url').length, 4627)
+  const user = KxcoIdentity.fromCredential({ keypair: u87, credential: cred })
+  const r = verifyChain(await user.attest('x'), cred, await inst.getPublicKey())
+  assert.equal(r.valid, true)
+  assert.equal(r.alg, 'ML-DSA-87')
+})
+
+test("create({ alg: 'ML-DSA-65' }) keeps the old behaviour: v1 records with no alg field, 3309-byte signatures", async () => {
+  const inst = await KxcoIdentity.create({ alg: 'ML-DSA-65' })
+  const env = await inst.attest('asked for 65')
+  assert.equal(Object.hasOwn(env, 'alg'), false)
+  assert.equal(Buffer.from(env.signature, 'base64url').length, 3309)
+  const own = await inst.verify(env)
+  assert.equal(own.valid, true)
+  assert.equal(own.alg, 'ML-DSA-65')
+
+  const cred = await inst.issue(u65.publicKey, { role: 'signer' })
+  assert.equal(Object.hasOwn(cred, 'alg'), false)
+  assert.equal(Buffer.from(cred.signature, 'base64url').length, 3309)
+  const user = KxcoIdentity.fromCredential({ keypair: u65, credential: cred })
+  const r = verifyChain(await user.attest('x'), cred, await inst.getPublicKey())
+  assert.equal(r.valid, true)
+  assert.equal(r.alg, 'ML-DSA-65')
+})
+
+test('an existing ML-DSA-65 key still signs and verifies as ML-DSA-65', async () => {
+  const id = await KxcoIdentity.create({ keypair: i65 })
+  assert.equal(id.alg, 'ML-DSA-65')
+  const env = await id.attest('an existing key')
+  assert.equal(Object.hasOwn(env, 'alg'), false)
+  assert.equal(Buffer.from(env.signature, 'base64url').length, 3309)
+  assert.equal((await id.verify(env)).valid, true)
+  const raw = await id.sign(new TextEncoder().encode('raw'))
+  assert.equal(raw.length, 3309)
+  assert.equal(mlDsa.verify(i65.publicKey, new TextEncoder().encode('raw'), Buffer.from(raw).toString('hex')), true)
+
+  // A user holding an ML-DSA-65 key, credentialed by an ML-DSA-65 institution.
+  const cred = await id.issue(u65.publicKey, { role: 'signer' })
+  const user = KxcoIdentity.fromCredential({ keypair: u65, credential: cred })
+  assert.equal(verifyChain(await user.attest('x'), cred, i65.publicKey).valid, true)
+})
+
+test('create({ hsm }): asks the hsm for ml-dsa-87 by default, and for ml-dsa-65 when asked', async () => {
+  const asked = []
+  const hsm = (kp, set) => ({
+    keygen: async (label, alg) => { asked.push(alg); return { publicKey: kp.publicKey } },
+    getPublicKey: async () => kp.publicKey,
+    sign: async (label, message) => Buffer.from(set.sign(kp.secretKey, message), 'hex'),
+  })
+  const id87 = await KxcoIdentity.create({ hsm: hsm(i87, wrapperMlDsa87), label: 'k' })
+  const id65 = await KxcoIdentity.create({ hsm: hsm(i65, mlDsa), label: 'k', alg: 'ML-DSA-65' })
+  assert.deepEqual(asked, ['ml-dsa-87', 'ml-dsa-65'])
+  assert.equal(id87.alg, 'ML-DSA-87')
+  assert.equal(id65.alg, 'ML-DSA-65')
+  assert.equal((await id87.verify(await id87.attest('x'))).valid, true)
+  assert.equal((await id65.verify(await id65.attest('x'))).valid, true)
+  // An hsm that hands back an ML-DSA-65 key when ML-DSA-87 was the default is refused.
+  await assert.rejects(KxcoIdentity.create({ hsm: hsm(i65, mlDsa), label: 'k' }), KxcoPqSdkError)
+})
+
+test('AuditedHsm: keygen with no algorithm makes an ML-DSA-87 key and logs it; ml-dsa-65 when asked; an existing ML-DSA-65 key still signs', async () => {
+  const log = new AuditLog({ keypair: mlDsa.ml_dsa65.keygen() })
+  const backend = new MemoryBackend()
+  const aHsm = new AuditedHsm(new PqHsm(backend), log)
+
+  const { publicKey: byDefault } = await aHsm.keygen('default-key')
+  assert.equal(byDefault.length, 2592)
+  const message = new TextEncoder().encode('audited')
+  const sig87 = Buffer.from(await aHsm.sign('default-key', message)).toString('hex')
+  assert.equal(sig87.length, 4627 * 2)
+  assert.equal(wrapperMlDsa87.verify(byDefault, message, sig87), true)
+
+  const { publicKey: asked65 } = await aHsm.keygen('asked-65', 'ml-dsa-65')
+  assert.equal(asked65.length, 1952)
+
+  // A key the backend already held, put there without keygen.
+  await backend.store('existing-65', 'ml-dsa-65', i65.publicKey, i65.secretKey)
+  const sig65 = Buffer.from(await aHsm.sign('existing-65', message)).toString('hex')
+  assert.equal(sig65.length, 3309 * 2)
+  assert.equal(mlDsa.verify(i65.publicKey, message, sig65), true)
+
+  const keygens = (await log.export()).filter((e) => e.operation === 'hsm:keygen').map((e) => e.metadata)
+  assert.deepEqual(keygens, [{ label: 'default-key', alg: 'ml-dsa-87' }, { label: 'asked-65', alg: 'ml-dsa-65' }])
 })
 
 test('create: an alg that disagrees with the keypair, or names neither set, is refused', async () => {

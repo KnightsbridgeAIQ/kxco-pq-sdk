@@ -8,8 +8,9 @@ const CREDENTIAL_VERSION = '1'
 // ── Parameter sets ──────────────────────────────────────────────────────────
 //
 // The KEY decides the algorithm: a key's length names its ML-DSA parameter
-// set. ML-DSA-65 is the default and the only set the v1 signing messages ever
-// meant. A record signed with ML-DSA-87 carries `alg: 'ML-DSA-87'` and is
+// set. A new key is ML-DSA-87 unless the caller asks for ML-DSA-65. ML-DSA-65
+// is the only set the v1 signing messages ever meant. A record signed with
+// ML-DSA-87 carries `alg: 'ML-DSA-87'` and is
 // signed over a v1.1 message, whose first line differs from v1 and whose
 // second line is the algorithm, so the algorithm is inside the signed bytes
 // and neither message can be read as the other. A record whose `alg` names
@@ -20,7 +21,11 @@ const SETS = Object.freeze({
   'ML-DSA-65': Object.freeze({ module: mlDsa,   hsmAlg: 'ml-dsa-65', publicKeyBytes: 1952, secretKeyBytes: 4032 }),
   'ML-DSA-87': Object.freeze({ module: mlDsa87, hsmAlg: 'ml-dsa-87', publicKeyBytes: 2592, secretKeyBytes: 4896 }),
 })
-const DEFAULT_ALG = 'ML-DSA-65'
+// The set a key generated here, or in the hsm, gets when no `alg` is passed.
+const DEFAULT_ALG = 'ML-DSA-87'
+// The set a record with no `alg` means. Every v1 message is ML-DSA-65, so
+// this stays ML-DSA-65 for as long as v1 records exist.
+const V1_ALG = 'ML-DSA-65'
 
 function algForPublicKey(publicKey) {
   for (const [name, set] of Object.entries(SETS)) if (publicKey?.length === set.publicKeyBytes) return name
@@ -172,7 +177,7 @@ function verifyEnvelope(envelope, publicKey) {
   // The key decides. A key of neither set verifies nothing, as before; a key
   // of the other set from the one the envelope states is refused, not tried.
   const stated = statedAlg(envelope)
-  const alg = stated ?? DEFAULT_ALG
+  const alg = stated ?? V1_ALG
   const keyAlg = algForPublicKey(publicKey)
   if (keyAlg !== null && keyAlg !== alg) {
     return { valid: false, error: 'algorithm does not match key' }
@@ -243,7 +248,7 @@ export class KxcoIdentity {
   get alg() {
     const pk = this.#keypair?.publicKey ??
       (this.#credential ? fromB64url(this.#credential.userPublicKey) : null)
-    return algForPublicKey(pk) ?? DEFAULT_ALG
+    return algForPublicKey(pk) ?? V1_ALG
   }
 
   // ── Factory: institution identity ────────────────────────────────────────
@@ -252,7 +257,7 @@ export class KxcoIdentity {
     let kid, kp = null, hsmRef = null, hsmLabel = null
 
     // `alg` picks the parameter set for a key made here, and defaults to
-    // ML-DSA-65. A keypair brought in decides its own set, and an `alg` that
+    // ML-DSA-87. A keypair brought in decides its own set, and an `alg` that
     // disagrees with it is refused rather than believed.
     if (alg !== undefined && !Object.hasOwn(SETS, alg)) {
       throw new KxcoPqSdkError(`alg must be 'ML-DSA-65' or 'ML-DSA-87', got ${JSON.stringify(alg)}`)
@@ -377,7 +382,7 @@ export class KxcoIdentity {
     const issuerAlg = this.alg
     const cred = {
       'kxco-credential': CREDENTIAL_VERSION,
-      ...(issuerAlg !== DEFAULT_ALG && { alg: issuerAlg }),
+      ...(issuerAlg !== V1_ALG && { alg: issuerAlg }),
       userKid,
       userPublicKey: b64url(userKeyBytes),
       issuedBy:     this.#kid,
@@ -454,7 +459,7 @@ export class KxcoIdentity {
     // The signer's algorithm, recorded only for ML-DSA-87 so ML-DSA-65
     // envelopes keep exactly the v1 shape. Context fields are unsigned, so one
     // may not claim to be the signer's algorithm.
-    const signerAlg = this.alg === DEFAULT_ALG ? null : this.alg
+    const signerAlg = this.alg === V1_ALG ? null : this.alg
     if (Object.hasOwn(SETS, context?.alg)) {
       throw new KxcoPqSdkError('attest: context may not set alg; it names the signing algorithm')
     }
@@ -515,7 +520,7 @@ export class KxcoIdentity {
     // Verify the institution signed this credential. The institution's key
     // decides the algorithm; a credential that states the other set from it is
     // refused rather than tried.
-    const credAlg = statedAlg(credential) ?? DEFAULT_ALG
+    const credAlg = statedAlg(credential) ?? V1_ALG
     const institutionAlg = algForPublicKey(institutionPublicKey)
     if (institutionAlg !== null && institutionAlg !== credAlg) {
       return { valid: false, error: 'credential algorithm does not match the institution key' }

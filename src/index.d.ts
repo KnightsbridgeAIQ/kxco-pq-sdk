@@ -4,8 +4,8 @@ export class KxcoPqSdkError extends Error {
   name: 'KxcoPqSdkError'
 }
 
-/** The ML-DSA parameter sets an identity can hold. ML-DSA-65 is the default. */
-export type IdentityAlgorithm = 'ML-DSA-65' | 'ML-DSA-87'
+/** The ML-DSA parameter sets an identity can hold. ML-DSA-87 is the default for a new key. */
+export type IdentityAlgorithm = 'ML-DSA-87' | 'ML-DSA-65'
 
 // ── Credential issued by an institution to a user ─────────────────────────
 
@@ -18,7 +18,7 @@ export interface KxcoCredential {
    */
   alg?: IdentityAlgorithm
   userKid: string
-  userPublicKey: string       // base64url-encoded ML-DSA-65 or ML-DSA-87 public key
+  userPublicKey: string       // base64url-encoded ML-DSA-87 or ML-DSA-65 public key
   issuedBy: string            // institution kid
   role: string
   authority: string[]
@@ -93,7 +93,7 @@ export interface CreateOptions {
   metadataUrl?: string
   /**
    * The parameter set for a key made here, randomly or in the hsm. Defaults to
-   * 'ML-DSA-65'. A keypair brought in decides its own set, and an alg that
+   * 'ML-DSA-87'. A keypair brought in decides its own set, and an alg that
    * disagrees with it is refused.
    */
   alg?: IdentityAlgorithm
@@ -149,7 +149,7 @@ export class KxcoIdentity {
   /** Verify a full credential chain without instantiating an identity. */
   static verifyChain(opts: VerifyChainOptions): ChainVerifyResult
 
-  /** Raw ML-DSA public key bytes: 1952 for ML-DSA-65, 2592 for ML-DSA-87. */
+  /** Raw ML-DSA public key bytes: 2592 for ML-DSA-87, 1952 for ML-DSA-65. */
   getPublicKey(): Promise<Uint8Array>
 
   /** Raw ML-DSA signature over message, in the set the secret key belongs to. */
@@ -172,7 +172,8 @@ export class KxcoIdentity {
 
 export class AuditedHsm {
   constructor(hsm: import('kxco-pq-hsm').PqHsm, auditLog: import('kxco-pq-audit').AuditLog)
-  keygen(label: string, alg?: 'ml-dsa-65' | 'ml-dsa-87' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
+  /** The default algorithm is 'ml-dsa-87'; pass 'ml-dsa-65' for an ML-DSA-65 key. */
+  keygen(label: string, alg?: 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
   sign(label: string, message: Uint8Array | Buffer): Promise<Uint8Array>
   decapsulate(label: string, ciphertext: Uint8Array | Buffer): Promise<Uint8Array>
   getPublicKey(label: string): Promise<Uint8Array>

@@ -49,13 +49,13 @@ npm install kxco-pq-sdk
 ## Quick start
 
 ```js
-import { KxcoIdentity, mlDsa } from 'kxco-pq-sdk'
+import { KxcoIdentity, mlDsa87 } from 'kxco-pq-sdk'
 
-// Institution: generate identity once, store keypair securely
+// Institution: generate identity once (ML-DSA-87 by default), store keypair securely
 const institution = await KxcoIdentity.create()
 
 // User: generate keypair (e.g. in a browser or mobile app)
-const userKeypair = mlDsa.ml_dsa65.keygen()
+const userKeypair = mlDsa87.ml_dsa87.keygen()
 
 // Institution: issue a credential after KYC approval
 const credential = await institution.issue(userKeypair.publicKey, {
@@ -106,7 +106,7 @@ between free and paid is set out in
 
 ### `KxcoIdentity.create(opts?)`
 
-Creates an institution (root) identity. Generates a new ML-DSA-65 keypair, or an ML-DSA-87 one with `alg: 'ML-DSA-87'`, unless `keypair` or `hsm` is supplied.
+Creates an institution (root) identity. Generates a new ML-DSA-87 keypair, or an ML-DSA-65 one with `alg: 'ML-DSA-65'`, unless `keypair` or `hsm` is supplied.
 
 | Option | Type | Description |
 |---|---|---|
@@ -116,7 +116,7 @@ Creates an institution (root) identity. Generates a new ML-DSA-65 keypair, or an
 | `auditLog` | `AuditLog` | Logs `identity:created` |
 | `chain` | `KxcoChain` | Registers institution on Armature L1 |
 | `metadataUrl` | `string` | Passed to chain registration |
-| `alg` | `'ML-DSA-65' \| 'ML-DSA-87'` | Parameter set for a key generated here or in the `hsm`. Defaults to `'ML-DSA-65'`. A `keypair` decides its own set, and a stated `alg` that disagrees with it is refused |
+| `alg` | `'ML-DSA-87' \| 'ML-DSA-65'` | Parameter set for a key generated here or in the `hsm`. Defaults to `'ML-DSA-87'`. A `keypair` decides its own set, and a stated `alg` that disagrees with it is refused |
 
 ### `institution.issue(userPublicKey, opts)`
 
@@ -133,10 +133,10 @@ Issues a signed credential to a user. Institution identities only.
 
 Returns a plain JSON object. Serialise and deliver to the user over HTTP.
 
-An ML-DSA-65 institution issues exactly the credential it always has. An
-ML-DSA-87 institution's credential carries `alg: 'ML-DSA-87'` and is signed over
-`kxco-credential-v1.1`, which puts the algorithm on the second line of the
-signed message. The user's key may be of either set; its length decides.
+An ML-DSA-87 institution's credential carries `alg: 'ML-DSA-87'` and is signed
+over `kxco-credential-v1.1`, which puts the algorithm on the second line of the
+signed message. An ML-DSA-65 institution issues exactly the credential it always
+has. The user's key may be of either set; its length decides.
 
 ### `institution.revoke(userKid, opts?)`
 
@@ -161,7 +161,7 @@ Signs arbitrary data and returns a self-contained envelope. `data` can be a stri
 | `purpose` | `string` | e.g. `'regulatory-report'`, `'trade-confirmation'` |
 | `aud` | `string` | Intended audience |
 | `exp` | `string` | ISO 8601 expiry |
-| `context` | `object` | Additional fields merged into the envelope. They are not signed, and `verify` and `verifyChain` never return them. A context `alg` naming `'ML-DSA-65'` or `'ML-DSA-87'` is refused, because `alg` names the signing algorithm |
+| `context` | `object` | Additional fields merged into the envelope. They are not signed, and `verify` and `verifyChain` never return them. A context `alg` naming `'ML-DSA-87'` or `'ML-DSA-65'` is refused, because `alg` names the signing algorithm |
 
 An ML-DSA-87 identity's envelope carries `alg: 'ML-DSA-87'` and is signed over
 `kxco-identity-attest-v1.1`, with the algorithm on the second line. An ML-DSA-65
@@ -207,7 +207,7 @@ is the set the user's envelope verified under.
 | `parentKid` | `null` | institution kid |
 | `credential` | `null` | signed credential object |
 | `metadata` | `{}` | `{}` |
-| `alg` | `'ML-DSA-65'` or `'ML-DSA-87'`, from the key | the same, from the user's key |
+| `alg` | `'ML-DSA-87'` or `'ML-DSA-65'`, from the key | the same, from the user's key |
 
 ## HSM backends
 

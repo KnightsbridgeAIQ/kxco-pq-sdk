@@ -12,7 +12,7 @@ export class AuditedHsm {
     this.#log = auditLog
   }
 
-  async keygen(label, alg = 'ml-dsa-65') {
+  async keygen(label, alg = 'ml-dsa-87') {
     const result = await this.#hsm.keygen(label, alg)
     await this.#log.append('hsm:keygen', { label, alg })
     return result
