@@ -89,7 +89,7 @@ versions of the five dependencies were assessed together.
 firmware decides which mechanisms exist, which is the one place in the family
 where a date depends on a vendor; see `kxco-pq-hsm`.
 
-**Runtime.** Node 20.19 and later, with Node 24 and later running the primitives
+**Runtime.** Node 22.12 and later, with Node 24 and later running the primitives
 in OpenSSL 3.5 for roughly 4x to 8x per operation.
 
 ## Correcting this document

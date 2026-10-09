@@ -288,7 +288,7 @@ To report a vulnerability, email [security@kxco.ai](mailto:security@kxco.ai) rat
 
 ## Supported runtimes
 
-Node.js **20.19+** (current LTS and later). ESM-only. New features and bug
+Node.js **22.12+**, tested on Node 22, 24 and 26. ESM-only. New features and bug
 fixes land on the latest major version; security fixes are backported one
 major version.
 
