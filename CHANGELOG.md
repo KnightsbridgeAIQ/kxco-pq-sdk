@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.0 (2026-10-10)
+
+Typings, and the `kxco-pq-hsm` floor. `AuditedHsm.keygen` accepts `'ml-kem-1024'` in its algorithm type.
+At runtime the algorithm was already passed straight through to `kxco-pq-hsm`; the dependency now
+requires `kxco-pq-hsm` ^1.8.0, the release that generates ML-KEM-1024 keys.
+
+ML-KEM-1024 keys come from `AuditedHsm.keygen` when the caller asks for `'ml-kem-1024'`; the default algorithm
+is unchanged.
+
 ## 2.3.0 (2026-10-09)
 
 Runtime support. No change to the API or its behaviour.
