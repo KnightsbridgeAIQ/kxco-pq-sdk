@@ -172,8 +172,8 @@ export class KxcoIdentity {
 
 export class AuditedHsm {
   constructor(hsm: import('kxco-pq-hsm').PqHsm, auditLog: import('kxco-pq-audit').AuditLog)
-  /** The default algorithm is 'ml-dsa-87'; pass 'ml-dsa-65' for an ML-DSA-65 key. */
-  keygen(label: string, alg?: 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
+  /** The default algorithm is 'ml-dsa-87'; pass 'ml-dsa-65' for an ML-DSA-65 key, or 'ml-kem-1024' or 'ml-kem-768' for a KEM key. */
+  keygen(label: string, alg?: 'ml-dsa-87' | 'ml-dsa-65' | 'ml-kem-1024' | 'ml-kem-768'): Promise<{ publicKey: Uint8Array }>
   sign(label: string, message: Uint8Array | Buffer): Promise<Uint8Array>
   decapsulate(label: string, ciphertext: Uint8Array | Buffer): Promise<Uint8Array>
   getPublicKey(label: string): Promise<Uint8Array>

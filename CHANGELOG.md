@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.0 (2026-10-10)
+
+Typings only. `AuditedHsm.keygen` accepts `'ml-kem-1024'` in its algorithm
+type. At runtime the algorithm was already passed straight through to
+`kxco-pq-hsm`, so nothing else changes; the `kxco-pq-hsm` range `^1.5.0`
+already admits 1.8, the release that generates ML-KEM-1024 keys. A project
+that pins an older `kxco-pq-hsm` gets that package's own refusal for the new
+algorithm.
+
+New keys in KXCO's packages and platform services use ML-KEM-1024 (FIPS 203,
+Category 5); ML-KEM-768 keys made earlier keep decrypting.
+
 ## 2.3.0 (2026-10-09)
 
 Runtime support. No change to the API or its behaviour.
