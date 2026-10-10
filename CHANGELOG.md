@@ -2,15 +2,12 @@
 
 ## 2.4.0 (2026-10-10)
 
-Typings only. `AuditedHsm.keygen` accepts `'ml-kem-1024'` in its algorithm
-type. At runtime the algorithm was already passed straight through to
-`kxco-pq-hsm`, so nothing else changes; the `kxco-pq-hsm` range `^1.5.0`
-already admits 1.8, the release that generates ML-KEM-1024 keys. A project
-that pins an older `kxco-pq-hsm` gets that package's own refusal for the new
-algorithm.
+Typings, and the `kxco-pq-hsm` floor. `AuditedHsm.keygen` accepts `'ml-kem-1024'` in its algorithm type.
+At runtime the algorithm was already passed straight through to `kxco-pq-hsm`; the dependency now
+requires `kxco-pq-hsm` ^1.8.0, the release that generates ML-KEM-1024 keys.
 
-New keys in KXCO's packages and platform services use ML-KEM-1024 (FIPS 203,
-Category 5); ML-KEM-768 keys made earlier keep decrypting.
+ML-KEM-1024 keys come from `AuditedHsm.keygen` when the caller asks for `'ml-kem-1024'`; the default algorithm
+is unchanged.
 
 ## 2.3.0 (2026-10-09)
 

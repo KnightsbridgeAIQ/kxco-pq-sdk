@@ -70,7 +70,7 @@
   },
   "dependencies": {
     "kxco-post-quantum": "^1.7.8",
-    "kxco-pq-hsm": "^1.5.0",
+    "kxco-pq-hsm": "^1.8.0",
     "kxco-pq-audit": "^1.4.5",
     "kxco-pq-attest": "^2.0.7",
     "kxco-pq-network": "^1.0.0"
