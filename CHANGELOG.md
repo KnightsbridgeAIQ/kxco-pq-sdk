@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.1 (2026-10-11)
+
+Documentation only. The README's Security section names ML-KEM-1024 beside ML-KEM-768: since 2.4.0,
+`AuditedHsm.keygen` generates ML-KEM-1024 keys through kxco-pq-hsm 1.8.0. No code change.
+
 ## 2.4.0 (2026-10-10)
 
 Typings, and the `kxco-pq-hsm` floor. `AuditedHsm.keygen` accepts `'ml-kem-1024'` in its algorithm type.
