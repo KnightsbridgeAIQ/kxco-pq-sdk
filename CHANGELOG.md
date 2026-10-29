@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.4.2 (2026-10-29)
+
+Dependencies. No source file changed and the API is the same.
+
+- `kxco-post-quantum` dependency floor moves from `^1.7.8` to `^1.13.0`, the current release.
+- `kxco-pq-attest` dependency floor moves from `^2.0.7` to `^2.3.0`.
+- `kxco-pq-audit` dependency floor moves from `^1.4.5` to `^1.6.0`.
+- `kxco-pq-hsm` dependency floor moves from `^1.8.0` to `^1.9.0`.
+- `kxco-pq-network` dependency floor moves from `^1.0.0` to `^1.2.0`.
+- Through `kxco-pq-hsm` 1.9, `koffi` arrives as an optional dependency. kxco-pq-hsm uses it only for on-token ML-KEM decapsulation.
+
 ## 2.4.1 (2026-10-11)
 
 Documentation only. The README's Security section names ML-KEM-1024 beside ML-KEM-768: since 2.4.0,
